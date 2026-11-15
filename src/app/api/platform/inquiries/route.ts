@@ -26,6 +26,22 @@ export async function PATCH(req: NextRequest) {
   if (!session) return apiJson({ error: 'Unauthorized' }, { status: 401, startMs })
 
   const body = await req.json()
+
+  if (body.action === 'bulkStatus' && Array.isArray(body.ids)) {
+    await dbUnscoped.platformInquiry.updateMany({
+      where: { id: { in: body.ids.map(String) } },
+      data: { status: String(body.status || 'follow_up') },
+    })
+    return apiJson({ updated: body.ids.length }, { startMs })
+  }
+
+  if (body.action === 'bulkDelete' && Array.isArray(body.ids)) {
+    await dbUnscoped.platformInquiry.deleteMany({
+      where: { id: { in: body.ids.map(String) } },
+    })
+    return apiJson({ deleted: body.ids.length }, { startMs })
+  }
+
   const id = String(body.id || '')
   if (!id) return apiJson({ error: 'Inquiry id required.' }, { status: 400, startMs })
 

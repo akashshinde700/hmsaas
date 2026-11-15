@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   BedDouble,
   CheckCircle2,
+  FileText,
   Pill,
   Plus,
   Printer,
@@ -15,6 +16,12 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  useAutosaveDraft,
+  useDebouncedValue,
+  useThrottledCallback,
+} from '@/hooks/useSaaSUX'
+import { AutosaveBadge, EmptyStateCard } from '@/components/saas-ux/SaaSUXPrimitives'
 import type {
   ClinicSettingsData,
   DoctorOption,
@@ -134,13 +141,42 @@ export default function SmartRxPadTab({
     weight: '68',
   })
 
-  // Medicine autocomplete
+  // #7 Debounced Medicine Search
   const [medSearch, setMedSearch] = useState('')
+  const debouncedMedSearch = useDebouncedValue(medSearch, 110)
   const [medResults, setMedResults] = useState<MedicineSearchResult[]>([])
   const [rxItems, setRxItems] = useState<RxRow[]>([])
   const [saving, setSaving] = useState(false)
   const [recentPrescriptions, setRecentPrescriptions] = useState<Array<Record<string, unknown>>>([])
   const [printableRx, setPrintableRx] = useState<Record<string, unknown> | null>(null)
+
+  // #6 Real-Time Prescription Draft Autosave
+  const draftPayload = {
+    patientId,
+    chiefComplaints,
+    diagnosis,
+    labInvestigations,
+    adviceLang,
+    advice,
+    rxItems,
+    vitals,
+  }
+  const { status: autosaveStatus, lastSavedAt, hasRestoredDraft, loadSavedDraft, clearDraft } =
+    useAutosaveDraft('hms_smart_rx_draft_v2', draftPayload, true)
+
+  function handleRestoreDraft() {
+    const d = loadSavedDraft()
+    if (!d) return
+    if (d.patientId) setPatientId(d.patientId)
+    setChiefComplaints(d.chiefComplaints || '')
+    setDiagnosis(d.diagnosis || '')
+    setLabInvestigations(d.labInvestigations || '')
+    setAdviceLang(d.adviceLang || 'en')
+    setAdvice(d.advice || '')
+    setRxItems(d.rxItems || [])
+    if (d.vitals) setVitals(d.vitals)
+    toast.success('Restored your unsaved prescription draft!')
+  }
 
   useEffect(() => {
     if (preselectedPatientId) setPatientId(preselectedPatientId)
@@ -166,11 +202,8 @@ export default function SmartRxPadTab({
   )
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      searchMedicines(medSearch)
-    }, 80)
-    return () => clearTimeout(timer)
-  }, [medSearch, searchMedicines])
+    searchMedicines(debouncedMedSearch)
+  }, [debouncedMedSearch, searchMedicines])
 
   const loadRecentRx = useCallback(async () => {
     const res = await fetch('/api/prescriptions')
@@ -210,8 +243,8 @@ export default function SmartRxPadTab({
     setRxItems((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
   }
 
-  async function handleSavePrescription(e: React.FormEvent) {
-    e.preventDefault()
+  // #8 Throttled Submit to prevent double-creating prescriptions on rapid clicks
+  const [executeSaveRx, isThrottled] = useThrottledCallback(async () => {
     if (!patientId || !diagnosis.trim()) {
       toast.error('Please select a patient and enter a clinical diagnosis.')
       return
@@ -248,20 +281,32 @@ export default function SmartRxPadTab({
         toast.error(data.error || 'Could not save prescription')
         return
       }
+      clearDraft()
+      setChiefComplaints('')
+      setDiagnosis('')
+      setLabInvestigations('')
+      setAdvice('')
+      setRxItems([])
       toast.success(`Prescription ${data.prescription.prescriptionNo} saved & doctor defaults learned!`)
       setPrintableRx(data.prescription)
       await loadRecentRx()
     } finally {
       setSaving(false)
     }
-  }
+  }, 1200)
 
   const selectedPatient = patients.find((p) => p.id === patientId)
 
   return (
     <div className="grid gap-6 lg:grid-cols-12">
       {/* Left 8 Cols: Active Smart Prescription Pad */}
-      <form onSubmit={handleSavePrescription} className="lg:col-span-8 space-y-5">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          executeSaveRx()
+        }}
+        className="lg:col-span-8 space-y-5"
+      >
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div className="flex items-center gap-2.5">
@@ -271,25 +316,34 @@ export default function SmartRxPadTab({
               <div>
                 <h2 className="text-base font-bold text-slate-900">Smart OPD Prescription Pad</h2>
                 <p className="text-xs text-slate-500">
-                  Powered by Live MedWiki Drug Formulary &amp; Per-Doctor Dosing Memory
+                  Debounced MedWiki Drug Search · Autosave Draft · Per-Doctor Dosing Memory
                 </p>
               </div>
             </div>
 
-            {selectedPatient && (
-              <button
-                type="button"
-                onClick={() =>
-                  onNavigateIpdAdmit(
-                    selectedPatient.id,
-                    diagnosis || chiefComplaints || 'OPD Direct Admission'
-                  )
-                }
-                className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-2 text-xs font-bold text-sky-800 hover:bg-sky-100 transition"
-              >
-                <BedDouble className="h-3.5 w-3.5" /> Admit Patient to IPD Bed →
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <AutosaveBadge
+                status={autosaveStatus}
+                lastSavedAt={lastSavedAt}
+                hasRestoredDraft={hasRestoredDraft}
+                onRestore={handleRestoreDraft}
+              />
+
+              {selectedPatient && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onNavigateIpdAdmit(
+                      selectedPatient.id,
+                      diagnosis || chiefComplaints || 'OPD Direct Admission'
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-800 hover:bg-sky-100 transition"
+                >
+                  <BedDouble className="h-3.5 w-3.5" /> Admit to IPD →
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Patient & Doctor Selection */}
@@ -385,7 +439,7 @@ export default function SmartRxPadTab({
             </div>
           </div>
 
-          {/* Symptoms & Diagnosis */}
+          {/* Symptoms & Diagnosis with inline smart validation feedback */}
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
@@ -422,7 +476,9 @@ export default function SmartRxPadTab({
                 value={diagnosis}
                 onChange={(e) => setDiagnosis(e.target.value)}
                 placeholder="e.g. Acute Viral Febrile Illness"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium"
+                className={`w-full rounded-xl border px-3 py-2 text-sm font-medium ${
+                  diagnosis.trim() ? 'border-emerald-400' : 'border-slate-300'
+                }`}
               />
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {DIAGNOSIS_CHIPS.slice(0, 5).map((chip) => (
@@ -448,11 +504,10 @@ export default function SmartRxPadTab({
               Rx Medications ({rxItems.length})
             </h3>
             <span className="text-[11px] text-slate-500">
-              Type brand or generic salt (e.g. Dolo, Augmentin, Pantoprazole, Telma, Azithral)
+              Debounced sub-5ms MedWiki search (e.g. Dolo, Augmentin, Pantoprazole, Telma, Azithral)
             </span>
           </div>
 
-          {/* Search Input */}
           <div className="relative">
             <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-3" />
             <input
@@ -463,7 +518,6 @@ export default function SmartRxPadTab({
             />
           </div>
 
-          {/* Instant Suggestions */}
           <div className="mt-2.5 flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-1">
             {medResults.slice(0, 12).map((med) => (
               <button
@@ -497,8 +551,15 @@ export default function SmartRxPadTab({
             ))}
           </div>
 
-          {/* Prescribed Items Table */}
-          {rxItems.length > 0 && (
+          {rxItems.length === 0 ? (
+            <div className="mt-4">
+              <EmptyStateCard
+                icon={Pill}
+                title="No medications added to this prescription yet"
+                description="Click any MedWiki suggestion pill above or type a brand/generic molecule name to auto-fill dosage, frequency & timing."
+              />
+            </div>
+          ) : (
             <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500 uppercase">
@@ -708,7 +769,7 @@ export default function SmartRxPadTab({
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || isThrottled}
               className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50 transition"
             >
               <CheckCircle2 className="h-4 w-4" />
@@ -724,39 +785,47 @@ export default function SmartRxPadTab({
           <h3 className="text-sm font-bold text-slate-900 mb-3">
             Recent Prescriptions ({recentPrescriptions.length})
           </h3>
-          <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
-            {recentPrescriptions.map((rx) => {
-              const p = rx.patient as { name?: string; uhid?: string } | undefined
-              const d = rx.doctor as { name?: string } | undefined
-              const items = (rx.items as Array<{ medicineName: string }>) || []
-              return (
-                <div
-                  key={String(rx.id)}
-                  className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3.5 text-xs"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-teal-700">
-                      {String(rx.prescriptionNo)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setPrintableRx(rx)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700 hover:border-teal-500 hover:text-teal-700"
-                    >
-                      <Printer className="h-3 w-3" /> Print / View
-                    </button>
+          {recentPrescriptions.length === 0 ? (
+            <EmptyStateCard
+              icon={FileText}
+              title="No prescriptions issued yet"
+              description="Saved OPD prescriptions will appear here for 1-click A4 letterhead printing."
+            />
+          ) : (
+            <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
+              {recentPrescriptions.map((rx) => {
+                const p = rx.patient as { name?: string; uhid?: string } | undefined
+                const d = rx.doctor as { name?: string } | undefined
+                const items = (rx.items as Array<{ medicineName: string }>) || []
+                return (
+                  <div
+                    key={String(rx.id)}
+                    className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-teal-700">
+                        {String(rx.prescriptionNo)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPrintableRx(rx)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700 hover:border-teal-500 hover:text-teal-700"
+                      >
+                        <Printer className="h-3 w-3" /> Print / View
+                      </button>
+                    </div>
+                    <p className="mt-1 font-bold text-slate-900">
+                      {p?.name} <span className="font-normal text-slate-500">({p?.uhid})</span>
+                    </p>
+                    <p className="mt-0.5 text-slate-700 font-medium">{String(rx.diagnosis)}</p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {items.length} med(s) · {d?.name}
+                    </p>
                   </div>
-                  <p className="mt-1 font-bold text-slate-900">
-                    {p?.name} <span className="font-normal text-slate-500">({p?.uhid})</span>
-                  </p>
-                  <p className="mt-0.5 text-slate-700 font-medium">{String(rx.diagnosis)}</p>
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    {items.length} med(s) · {d?.name}
-                  </p>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -786,7 +855,6 @@ export default function SmartRxPadTab({
               </div>
             </div>
 
-            {/* Hospital White-Label Header */}
             <div className="border-b-2 border-teal-700 pb-4 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-extrabold text-teal-800">
@@ -812,7 +880,6 @@ export default function SmartRxPadTab({
               </div>
             </div>
 
-            {/* Patient Strip */}
             <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-xs border border-slate-200">
               <div>
                 <strong>Patient:</strong>{' '}
@@ -839,7 +906,6 @@ export default function SmartRxPadTab({
               </p>
             </div>
 
-            {/* Rx Symbol + Medications */}
             <div className="mt-5">
               <p className="font-serif text-2xl font-bold text-teal-800">℞</p>
               <table className="mt-2 w-full border-collapse text-left text-xs">

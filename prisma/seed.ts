@@ -1029,7 +1029,77 @@ async function main() {
     })
   }
 
-  console.log('[Seed] All Platform, Tenant, MedWiki, OPD & IPD seed data ready!')
+  // Seed Affiliate & Referral Program data
+  const partnerCount = await dbUnscoped.affiliatePartner.count()
+  if (partnerCount === 0) {
+    const sahyadriOrg = await dbUnscoped.organization.findUnique({
+      where: { slug: 'sahyadri-hospital-pune' },
+    })
+    const partner1 = await dbUnscoped.affiliatePartner.create({
+      data: {
+        name: 'Sahyadri Multispecialty Hospital Referral Desk',
+        email: 'admin@sahyadrihospitalpune.in',
+        phone: '9822011223',
+        companyOrClinic: 'Sahyadri Multispecialty Hospital Pune',
+        city: 'Pune',
+        referralCode: 'HOSP-SAHYADRI20',
+        upiOrBankDetails: 'sahyadrihospital@icici',
+        commissionPercent: 20,
+        clicksCount: 48,
+        totalReferrals: 3,
+        convertedCount: 2,
+        totalEarnedINR: 19996,
+        pendingPayoutINR: 4999,
+        organizationId: sahyadriOrg?.id || null,
+      },
+    })
+    await dbUnscoped.referralLead.createMany({
+      data: [
+        {
+          partnerId: partner1.id,
+          referredClinicName: 'Deccan Heart & Lung Institute',
+          contactName: 'Dr. Vivek Joshi',
+          contactPhone: '9823019988',
+          contactEmail: 'vivek@deccanheartpune.in',
+          city: 'Pune',
+          planInterested: 'Advance Hospital',
+          status: 'converted',
+          rewardAmountINR: 9998,
+        },
+        {
+          partnerId: partner1.id,
+          referredClinicName: 'Kothrud Ortho & Trauma Nursing Home',
+          contactName: 'Dr. Prachi Gokhale',
+          contactPhone: '9850123499',
+          contactEmail: 'prachi@kothrudortho.in',
+          city: 'Pune',
+          planInterested: 'Advance Hospital',
+          status: 'demo_booked',
+          rewardAmountINR: 4999,
+        },
+      ],
+    })
+
+    await dbUnscoped.affiliatePartner.create({
+      data: {
+        name: 'MedTech Maharashtra IT Consultants',
+        email: 'partners@medtechmh.in',
+        phone: '9765001122',
+        companyOrClinic: 'MedTech IT & Pharmacy Distributors',
+        city: 'Mumbai',
+        referralCode: 'AFF-MEDTECH20',
+        upiOrBankDetails: 'medtechmh@okaxis',
+        commissionPercent: 25,
+        clicksCount: 112,
+        totalReferrals: 5,
+        convertedCount: 3,
+        totalEarnedINR: 37490,
+        pendingPayoutINR: 7490,
+      },
+    })
+  }
+
+  console.log('[Seed] All Platform, Tenant, MedWiki, OPD, IPD & Affiliate seed data ready!')
 }
 
 main()

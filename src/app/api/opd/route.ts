@@ -46,6 +46,34 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const action = String(body.action || 'createToken')
 
+  if (action === 'updateQueueStatus') {
+    const queueId = String(body.queueId || body.id || '')
+    const status = String(body.status || 'completed')
+    await dbUnscoped.opdQueue.updateMany({
+      where: { id: queueId, organizationId: session.organizationId },
+      data: {
+        status,
+        ...(status === 'in_consultation' ? { calledAt: new Date() } : {}),
+        ...(status === 'completed' ? { completedAt: new Date() } : {}),
+      },
+    })
+    invalidateCachePrefix(`dash:${session.organizationId}`)
+    return apiJson({ ok: true }, { startMs })
+  }
+
+  if (action === 'bulkUpdateStatus' && Array.isArray(body.ids)) {
+    const status = String(body.status || 'completed')
+    await dbUnscoped.opdQueue.updateMany({
+      where: { id: { in: body.ids.map(String) }, organizationId: session.organizationId },
+      data: {
+        status,
+        ...(status === 'completed' ? { completedAt: new Date() } : {}),
+      },
+    })
+    invalidateCachePrefix(`dash:${session.organizationId}`)
+    return apiJson({ updated: body.ids.length }, { startMs })
+  }
+
   if (action === 'recordVitals') {
     const vital = await db.vitalSign.create({
       data: {
@@ -102,13 +130,16 @@ export async function POST(req: NextRequest) {
       queueDate,
       priority: String(body.priority || 'normal'),
       visitType: String(body.visitType || 'New Visit'),
-      chiefComplaint: body.chiefComplaint ? String(body.chiefComplaint) : null,
+      chiefComplaint:
+        body.chiefComplaint || body.visitReason
+          ? String(body.chiefComplaint || body.visitReason)
+          : null,
       status: 'waiting',
     },
   })
 
   invalidateCachePrefix(`dash:${session.organizationId}`)
-  return apiJson({ item }, { status: 201, startMs })
+  return apiJson({ item, tokenNumber: item.tokenNumber }, { status: 201, startMs })
 }
 
 export async function PATCH(req: NextRequest) {

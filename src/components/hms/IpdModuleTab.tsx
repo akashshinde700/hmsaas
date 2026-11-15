@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { EmptyStateCard, SkeletonCardGrid } from '@/components/saas-ux/SaaSUXPrimitives'
 import type {
   ClinicSettingsData,
   DoctorOption,
@@ -171,7 +172,10 @@ export default function IpdModuleTab({
   const [categories, setCategories] = useState<WardCategory[]>([])
   const [beds, setBeds] = useState<EnrichedBed[]>([])
   const [admissions, setAdmissions] = useState<EnrichedAdmission[]>([])
+  const [ipdLoading, setIpdLoading] = useState(true)
   const [selectedWard, setSelectedWard] = useState<string>('ALL')
+  const [bedStatusFilter, setBedStatusFilter] = useState<string>('ALL')
+  const [bedEquipFilter, setBedEquipFilter] = useState<string>('ALL')
   const [admFilter, setAdmFilter] = useState<'current' | 'discharged'>('current')
 
   // Active Admission Clinical & Billing Chart Modal
@@ -250,12 +254,16 @@ export default function IpdModuleTab({
   })
 
   const loadIpd = useCallback(async () => {
-    const res = await fetch('/api/ipd?show=all')
-    if (res.ok) {
-      const d = await res.json()
-      setCategories(d.categories || [])
-      setBeds(d.beds || [])
-      setAdmissions(d.admissions || [])
+    try {
+      const res = await fetch('/api/ipd?show=all')
+      if (res.ok) {
+        const d = await res.json()
+        setCategories(d.categories || [])
+        setBeds(d.beds || [])
+        setAdmissions(d.admissions || [])
+      }
+    } finally {
+      setIpdLoading(false)
     }
   }, [])
 
@@ -295,6 +303,26 @@ export default function IpdModuleTab({
   const selectedAdmission = admissions.find((a) => a.id === selectedAdmissionId) || null
 
   async function postIpdAction(payload: Record<string, unknown>, successMsg: string) {
+    // #1 Optimistic UI Updates for instant Nursing MAR Dose & Bed Cleaning ready clicks
+    if (payload.action === 'giveDose' && payload.orderId) {
+      setAdmissions((prev) =>
+        prev.map((a) => ({
+          ...a,
+          medicationOrders: a.medicationOrders.map((mo) =>
+            mo.id === payload.orderId ? { ...mo, dosesGiven: mo.dosesGiven + 1 } : mo
+          ),
+        }))
+      )
+    } else if (payload.action === 'updateBedStatus' && payload.bedId) {
+      setBeds((prev) =>
+        prev.map((b) =>
+          b.id === payload.bedId
+            ? { ...b, status: String(payload.status), effectiveStatus: String(payload.status) }
+            : b
+        )
+      )
+    }
+
     const res = await fetch('/api/ipd', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -303,6 +331,7 @@ export default function IpdModuleTab({
     const data = await res.json()
     if (!res.ok) {
       toast.error(data.error || 'IPD operation failed')
+      await loadIpd()
       return null
     }
     toast.success(successMsg)
@@ -312,8 +341,14 @@ export default function IpdModuleTab({
   }
 
   const occupiedCount = beds.filter((b) => b.effectiveStatus === 'occupied').length
-  const visibleBeds =
-    selectedWard === 'ALL' ? beds : beds.filter((b) => b.categoryId === selectedWard)
+  const visibleBeds = beds.filter((b) => {
+    if (selectedWard !== 'ALL' && b.categoryId !== selectedWard) return false
+    if (bedStatusFilter !== 'ALL' && b.effectiveStatus !== bedStatusFilter) return false
+    if (bedEquipFilter === 'oxygen' && !b.hasOxygen) return false
+    if (bedEquipFilter === 'ventilator' && !b.hasVentilator) return false
+    if (bedEquipFilter === 'monitor' && !b.hasMonitor) return false
+    return true
+  })
   const filteredAdmissions = admissions.filter((a) =>
     admFilter === 'current' ? a.dischargedAt === null : a.dischargedAt !== null
   )
@@ -426,20 +461,46 @@ export default function IpdModuleTab({
             ))}
           </div>
 
-          <div className="flex items-center gap-3 text-[11px] font-semibold">
-            <span className="flex items-center gap-1 text-emerald-700">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Free (Click to Admit)
-            </span>
-            <span className="flex items-center gap-1 text-rose-700">
-              <span className="h-2.5 w-2.5 rounded-full bg-rose-500" /> Occupied (Click for IPD Chart)
-            </span>
-            <span className="flex items-center gap-1 text-amber-700">
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Cleaning
-            </span>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <select
+              value={bedStatusFilter}
+              onChange={(e) => setBedStatusFilter(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-semibold text-slate-700"
+            >
+              <option value="ALL">Status: All Beds</option>
+              <option value="free">Free Beds Only</option>
+              <option value="occupied">Occupied Beds Only</option>
+              <option value="cleaning">Cleaning / Maintenance</option>
+            </select>
+            <select
+              value={bedEquipFilter}
+              onChange={(e) => setBedEquipFilter(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-semibold text-slate-700"
+            >
+              <option value="ALL">Equipment: Any</option>
+              <option value="oxygen">With Oxygen Line</option>
+              <option value="monitor">With Cardiac Monitor</option>
+              <option value="ventilator">With Ventilator</option>
+            </select>
           </div>
         </div>
 
-        {/* Bed Cards Grid */}
+        {/* Bed Cards Grid with Skeleton & Empty State */}
+        {ipdLoading ? (
+          <SkeletonCardGrid count={8} />
+        ) : visibleBeds.length === 0 ? (
+          <EmptyStateCard
+            icon={BedDouble}
+            title="No beds match your active ward or equipment filters"
+            description="Reset filters or add a new bed to this ward category."
+            actionLabel="Reset Bed Filters"
+            onAction={() => {
+              setSelectedWard('ALL')
+              setBedStatusFilter('ALL')
+              setBedEquipFilter('ALL')
+            }}
+          />
+        ) : (
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {visibleBeds.map((bed) => {
             const isOccupied = bed.effectiveStatus === 'occupied' && bed.occupant
@@ -555,6 +616,7 @@ export default function IpdModuleTab({
             )
           })}
         </div>
+        )}
       </div>
 
       {/* ADMISSIONS REGISTER TABLE */}

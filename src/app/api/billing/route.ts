@@ -50,6 +50,43 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const action = String(body.action || 'createInvoice')
 
+  if (action === 'bulkMarkPaid' && Array.isArray(body.ids)) {
+    const unpaid = await db.invoice.findMany({
+      where: {
+        organizationId: orgId,
+        id: { in: body.ids.map(String) },
+        balanceDue: { gt: 0 },
+      },
+    })
+    const basePayCount = await db.payment.count({ where: { organizationId: orgId } })
+    for (let i = 0; i < unpaid.length; i++) {
+      const inv = unpaid[i]
+      await dbUnscoped.$transaction([
+        dbUnscoped.payment.create({
+          data: {
+            organizationId: orgId,
+            paymentNo: `PAY-${String(basePayCount + i + 1).padStart(4, '0')}`,
+            patientId: inv.patientId,
+            invoiceId: inv.id,
+            amount: inv.balanceDue,
+            paymentMode: String(body.paymentMode || 'UPI'),
+          },
+        }),
+        dbUnscoped.invoice.update({
+          where: { id: inv.id },
+          data: {
+            amountPaid: inv.totalAmount,
+            balanceDue: 0,
+            status: 'paid',
+            paymentMode: String(body.paymentMode || 'UPI'),
+          },
+        }),
+      ])
+    }
+    invalidateCachePrefix(`dash:${orgId}`)
+    return apiJson({ settled: unpaid.length }, { startMs })
+  }
+
   if (action === 'recordPayment') {
     const invoiceId = String(body.invoiceId || '')
     const amount = Number(body.amount || 0)

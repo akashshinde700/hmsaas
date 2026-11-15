@@ -25,6 +25,8 @@ import {
   Zap,
 } from 'lucide-react'
 import { PwaInstallButton } from '@/components/pwa/PwaInstall'
+import { useAutosaveDraft, useThrottledCallback } from '@/hooks/useSaaSUX'
+import { AutosaveBadge, SmartValidatedInput } from '@/components/saas-ux/SaaSUXPrimitives'
 import { toast } from 'sonner'
 
 interface PublicPlan {
@@ -122,6 +124,12 @@ export default function SaaSLandingPage({ initialPlans }: { initialPlans: Public
     message: '',
   })
 
+  const inquiryDraft = useAutosaveDraft(
+    'aethermed:landing_inquiry_draft',
+    form,
+    Boolean(form.clinicName || form.contactName || form.email || form.phone)
+  )
+
   useEffect(() => {
     if (plans.length === 0) {
       fetch('/api/public/plans')
@@ -131,10 +139,23 @@ export default function SaaSLandingPage({ initialPlans }: { initialPlans: Public
         })
         .catch(() => {})
     }
+    // Track affiliate referral visit if ?ref=CODE is present
+    const params = new URLSearchParams(window.location.search)
+    const refCode = params.get('ref')
+    if (refCode) {
+      setForm((prev) => ({
+        ...prev,
+        message: prev.message || `Referred via Partner Code: ${refCode.toUpperCase()}`,
+      }))
+      fetch('/api/referrals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'trackClick', referralCode: refCode }),
+      }).catch(() => {})
+    }
   }, [plans.length])
 
-  async function handleInquirySubmit(e: React.FormEvent) {
-    e.preventDefault()
+  const [submitInquiryThrottled, coolingDown] = useThrottledCallback(async () => {
     if (!form.clinicName.trim() || !form.contactName.trim() || !form.email.trim()) {
       toast.error('Please enter your hospital/clinic name, your name, and email.')
       return
@@ -151,11 +172,17 @@ export default function SaaSLandingPage({ initialPlans }: { initialPlans: Public
         toast.error(data.error || 'Could not submit inquiry')
         return
       }
+      inquiryDraft.clearDraft()
       setSubmitted(true)
       toast.success('Demo request received! Our onboarding team will reach out shortly.')
     } finally {
       setSubmitting(false)
     }
+  }, 1200)
+
+  function handleInquirySubmit(e: React.FormEvent) {
+    e.preventDefault()
+    submitInquiryThrottled()
   }
 
   return (
@@ -175,10 +202,13 @@ export default function SaaSLandingPage({ initialPlans }: { initialPlans: Public
             </div>
           </div>
 
-          <nav className="hidden items-center gap-7 text-sm font-medium text-slate-600 md:flex">
-            <a href="#modules" className="hover:text-teal-600 transition">OPD & IPD Modules</a>
+          <nav className="hidden items-center gap-6 text-sm font-medium text-slate-600 md:flex">
+            <a href="#modules" className="hover:text-teal-600 transition">OPD &amp; IPD</a>
             <a href="#medwiki" className="hover:text-teal-600 transition">MedWiki Engine</a>
             <a href="#pricing" className="hover:text-teal-600 transition">SaaS Plans</a>
+            <Link href="/referrals" className="text-teal-700 font-semibold hover:text-teal-800 transition">
+              Affiliate (20%)
+            </Link>
             <Link href="/blog" className="hover:text-teal-600 transition">Insights</Link>
             <a href="#demo" className="hover:text-teal-600 transition">Book Demo</a>
           </nav>
@@ -670,52 +700,61 @@ export default function SaaSLandingPage({ initialPlans }: { initialPlans: Public
                 </div>
               ) : (
                 <form onSubmit={handleInquirySubmit} className="grid gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-2 pb-1">
+                    <span className="text-xs font-bold text-slate-600">
+                      Instant Demo &amp; 7-Day Cloud Sandbox Request
+                    </span>
+                    <AutosaveBadge
+                      status={inquiryDraft.status}
+                      lastSavedAt={inquiryDraft.lastSavedAt}
+                      hasRestoredDraft={inquiryDraft.hasRestoredDraft}
+                      onRestore={() => {
+                        const saved = inquiryDraft.loadSavedDraft()
+                        if (saved) {
+                          setForm(saved)
+                          toast.success('Restored your unsaved inquiry draft')
+                        }
+                      }}
+                    />
+                  </div>
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                      Hospital / Clinic Name *
-                    </label>
-                    <input
+                    <SmartValidatedInput
+                      label="Hospital / Clinic Name"
                       required
+                      rules={['required']}
                       value={form.clinicName}
-                      onChange={(e) => setForm({ ...form, clinicName: e.target.value })}
+                      onChange={(val) => setForm({ ...form, clinicName: val })}
                       placeholder="e.g. Lifeline Multispecialty Hospital"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                      Doctor / Administrator Name *
-                    </label>
-                    <input
+                    <SmartValidatedInput
+                      label="Doctor / Administrator Name"
                       required
+                      rules={['required']}
                       value={form.contactName}
-                      onChange={(e) => setForm({ ...form, contactName: e.target.value })}
+                      onChange={(val) => setForm({ ...form, contactName: val })}
                       placeholder="Dr. Rajesh Kulkarni"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                      Work Email *
-                    </label>
-                    <input
+                    <SmartValidatedInput
+                      label="Work Email"
                       type="email"
                       required
+                      rules={['required', 'email']}
                       value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      onChange={(val) => setForm({ ...form, email: val })}
                       placeholder="admin@lifelinehospital.in"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                      Phone / WhatsApp
-                    </label>
-                    <input
+                    <SmartValidatedInput
+                      label="Phone / WhatsApp"
+                      rules={['indian_phone']}
                       value={form.phone}
-                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      onChange={(val) => setForm({ ...form, phone: val })}
                       placeholder="+91 98220 XXXXX"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     />
                   </div>
                   <div>
@@ -775,7 +814,7 @@ export default function SaaSLandingPage({ initialPlans }: { initialPlans: Public
                   <div className="sm:col-span-2">
                     <button
                       type="submit"
-                      disabled={submitting}
+                      disabled={submitting || coolingDown}
                       className="w-full rounded-xl bg-teal-600 py-3.5 text-sm font-bold text-white shadow-md hover:bg-teal-700 disabled:opacity-50 transition"
                     >
                       {submitting ? 'Submitting Request...' : 'Book Demo & Activate 7-Day Trial'}
@@ -819,6 +858,9 @@ export default function SaaSLandingPage({ initialPlans }: { initialPlans: Public
           </div>
 
           <div className="flex flex-wrap items-center gap-6 text-xs font-medium">
+            <Link href="/referrals" className="text-teal-400 hover:text-white transition">
+              Partner &amp; Affiliate Program (20%)
+            </Link>
             <Link href="/login" className="hover:text-white transition flex items-center gap-1">
               <Lock className="h-3.5 w-3.5" /> Hospital Portal
             </Link>

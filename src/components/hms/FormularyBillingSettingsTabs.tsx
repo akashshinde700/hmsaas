@@ -7,20 +7,29 @@ import {
   CreditCard,
   Database,
   FlaskConical,
-  Pill,
   Plus,
-  Search,
+  Sparkles,
   Trash2,
   Users,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAutosaveDraft, validateSmartField } from '@/hooks/useSaaSUX'
+import {
+  AutosaveBadge,
+  ConfirmDestructiveModal,
+  EmptyStateCard,
+  SaaSDataTable,
+  SmartValidatedInput,
+  TierBadge,
+} from '@/components/saas-ux/SaaSUXPrimitives'
 import type { ClinicSettingsData, MedicineSearchResult, PatientRecord } from './types'
 
 export function MedicineMasterTab() {
-  const [query, setQuery] = useState('')
   const [medicines, setMedicines] = useState<MedicineSearchResult[]>([])
+  const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<MedicineSearchResult | null>(null)
   const [form, setForm] = useState({
     name: '',
     composition: '',
@@ -32,18 +41,22 @@ export function MedicineMasterTab() {
     defaultDuration: '5 days',
   })
 
-  const loadMeds = useCallback(async (q = '') => {
-    const res = await fetch(`/api/medicines?q=${encodeURIComponent(q)}&limit=50`)
-    if (res.ok) {
-      const d = await res.json()
-      setMedicines(d.medicines || [])
+  const loadMeds = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/medicines?limit=100')
+      if (res.ok) {
+        const d = await res.json()
+        setMedicines(d.medicines || [])
+      }
+    } finally {
+      setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    const t = setTimeout(() => loadMeds(query), 90)
-    return () => clearTimeout(t)
-  }, [query, loadMeds])
+    loadMeds()
+  }, [loadMeds])
 
   return (
     <div className="space-y-5">
@@ -57,7 +70,7 @@ export function MedicineMasterTab() {
             Global MedWiki Formulary + Your Hospital Custom Drugs
           </h2>
           <p className="text-xs text-slate-500">
-            Global drugs sync continuously from MedWiki; custom drugs added here remain private to your hospital.
+            Filter by source, dosage form, or controlled drug schedule; export your hospital formulary anytime.
           </p>
         </div>
 
@@ -70,79 +83,150 @@ export function MedicineMasterTab() {
         </button>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
-        <div className="relative max-w-md mb-4">
-          <Search className="h-4 w-4 text-slate-400 absolute left-3.5 top-3" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search brand, salt molecule, category, form..."
-            className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2 text-sm focus:border-teal-500 focus:outline-none"
-          />
-        </div>
+      <SaaSDataTable<MedicineSearchResult>
+        data={medicines}
+        loading={loading}
+        rowKey={(m) => m.id}
+        initialPageSize={10}
+        searchPlaceholder="Debounced search by brand, generic salt, manufacturer, category..."
+        searchableText={(m) =>
+          `${m.name} ${m.composition || ''} ${m.genericName || ''} ${m.manufacturer || ''} ${m.category}`
+        }
+        exportFilename="medwiki-hospital-formulary.csv"
+        emptyTitle="No formulations match your filters"
+        emptyDescription="Add a custom hospital formulation or clear filters to browse the Global MedWiki catalog."
+        emptyActionLabel="+ Add Custom Medicine"
+        onEmptyAction={() => setShowAdd(true)}
+        filters={[
+          {
+            key: 'source',
+            label: 'Source',
+            options: [
+              { value: 'global', label: 'MedWiki Global' },
+              { value: 'custom', label: 'Clinic Custom' },
+            ],
+            match: (m, val) => (val === 'custom' ? m.isCustom : !m.isCustom),
+          },
+          {
+            key: 'form',
+            label: 'Dosage Form',
+            options: [
+              'Tablet',
+              'Capsule',
+              'Syrup',
+              'Suspension',
+              'Injection',
+              'Infusion',
+              'Inhaler',
+            ].map((f) => ({ value: f, label: f })),
+            match: (m, val) => m.dosageForm.toLowerCase() === val.toLowerCase(),
+          },
+          {
+            key: 'schedule',
+            label: 'Schedule',
+            options: [
+              { value: 'controlled', label: 'Controlled (H1 / X)' },
+              { value: 'standard', label: 'Standard Rx / OTC' },
+            ],
+            match: (m, val) => (val === 'controlled' ? m.isControlled : !m.isControlled),
+          },
+        ]}
+        columns={[
+          {
+            key: 'source',
+            header: 'Source',
+            sortable: true,
+            sortValue: (m) => (m.isCustom ? '1-Custom' : '2-Global'),
+            csvValue: (m) => (m.isCustom ? 'Clinic Custom' : 'MedWiki Global'),
+            render: (m) => (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                  m.isCustom ? 'bg-violet-100 text-violet-700' : 'bg-teal-50 text-teal-700'
+                }`}
+              >
+                {m.isCustom ? 'Clinic Custom' : 'MedWiki Global'}
+              </span>
+            ),
+          },
+          {
+            key: 'name',
+            header: 'Brand Name',
+            sortable: true,
+            sortValue: (m) => m.name,
+            csvValue: (m) => m.name,
+            render: (m) => (
+              <div>
+                <p className="font-bold text-slate-900">{m.name}</p>
+                {m.manufacturer && (
+                  <p className="text-[11px] font-normal text-slate-400">{m.manufacturer}</p>
+                )}
+              </div>
+            ),
+          },
+          {
+            key: 'salt',
+            header: 'Salt Composition',
+            csvValue: (m) => m.composition || m.genericName || '',
+            render: (m) => <span className="text-slate-600">{m.composition || m.genericName}</span>,
+          },
+          {
+            key: 'form',
+            header: 'Form & Route',
+            sortable: true,
+            sortValue: (m) => m.dosageForm,
+            render: (m) => (
+              <span>
+                {m.dosageForm} · <span className="text-slate-500">{m.defaultRoute}</span>
+              </span>
+            ),
+          },
+          {
+            key: 'rx',
+            header: 'Default Rx',
+            render: (m) => (
+              <span className="font-mono font-semibold text-teal-800">
+                {m.defaultFrequency} · {m.defaultDuration}
+              </span>
+            ),
+          },
+          {
+            key: 'mrp',
+            header: 'MRP',
+            sortable: true,
+            sortValue: (m) => m.mrp ?? 0,
+            render: (m) => <span className="font-medium">{m.mrp ? `₹${m.mrp}` : '—'}</span>,
+          },
+          {
+            key: 'action',
+            header: '',
+            render: (m) =>
+              m.isCustom ? (
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(m)}
+                  className="text-rose-500 hover:text-rose-700"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ) : null,
+          },
+        ]}
+      />
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-100 bg-slate-50 text-slate-500 uppercase">
-              <tr>
-                <th className="py-3 px-3">Source</th>
-                <th className="py-3 px-3">Brand Name</th>
-                <th className="py-3 px-3">Salt Composition</th>
-                <th className="py-3 px-3">Form &amp; Route</th>
-                <th className="py-3 px-3">Default Rx</th>
-                <th className="py-3 px-3">MRP</th>
-                <th className="py-3 px-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {medicines.map((m) => (
-                <tr key={m.id} className="hover:bg-slate-50/70">
-                  <td className="py-2.5 px-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                        m.isCustom
-                          ? 'bg-violet-100 text-violet-700'
-                          : 'bg-teal-50 text-teal-700'
-                      }`}
-                    >
-                      {m.isCustom ? 'Clinic Custom' : 'MedWiki Global'}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-3 font-bold text-slate-900">
-                    {m.name}
-                    {m.manufacturer && (
-                      <p className="text-[11px] font-normal text-slate-400">{m.manufacturer}</p>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-3 text-slate-600">{m.composition || m.genericName}</td>
-                  <td className="py-2.5 px-3">
-                    {m.dosageForm} · <span className="text-slate-500">{m.defaultRoute}</span>
-                  </td>
-                  <td className="py-2.5 px-3 font-mono font-semibold text-teal-800">
-                    {m.defaultFrequency} · {m.defaultDuration}
-                  </td>
-                  <td className="py-2.5 px-3 font-medium">{m.mrp ? `₹${m.mrp}` : '—'}</td>
-                  <td className="py-2.5 px-3">
-                    {m.isCustom && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await fetch(`/api/medicines?id=${m.id}`, { method: 'DELETE' })
-                          toast.success('Removed custom medicine')
-                          loadMeds(query)
-                        }}
-                        className="text-rose-500 hover:text-rose-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ConfirmDestructiveModal
+        open={Boolean(deleteTarget)}
+        title={`Remove "${deleteTarget?.name}"?`}
+        description="This custom formulation will be removed from your clinic's private formulary. Existing past prescriptions will remain unaffected."
+        confirmButtonLabel="Remove Custom Medicine"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          if (!deleteTarget) return
+          await fetch(`/api/medicines?id=${deleteTarget.id}`, { method: 'DELETE' })
+          toast.success(`Removed ${deleteTarget.name}`)
+          setDeleteTarget(null)
+          loadMeds()
+        }}
+      />
 
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
@@ -164,44 +248,47 @@ export function MedicineMasterTab() {
                 if (res.ok) {
                   toast.success('Saved to your clinic formulary!')
                   setShowAdd(false)
-                  loadMeds(query)
+                  loadMeds()
                 }
               }}
               className="mt-4 space-y-3 text-xs"
             >
-              <input
+              <SmartValidatedInput
+                label="Brand Name"
                 required
-                placeholder="Brand Name *"
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                onChange={(v) => setForm({ ...form, name: v })}
+                placeholder="e.g. SahyadriORS Powder"
               />
-              <input
+              <SmartValidatedInput
+                label="Generic / Salt Composition"
                 required
-                placeholder="Generic / Salt Composition *"
                 value={form.composition}
-                onChange={(e) => setForm({ ...form, composition: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                onChange={(v) => setForm({ ...form, composition: v })}
+                placeholder="e.g. WHO Oral Rehydration Salts"
               />
               <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={form.dosageForm}
-                  onChange={(e) => setForm({ ...form, dosageForm: e.target.value })}
-                  className="rounded-xl border border-slate-300 px-3 py-2"
-                >
-                  <option>Tablet</option>
-                  <option>Capsule</option>
-                  <option>Syrup</option>
-                  <option>Injection</option>
-                  <option>Infusion</option>
-                  <option>Ointment</option>
-                </select>
-                <input
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Dosage Form</label>
+                  <select
+                    value={form.dosageForm}
+                    onChange={(e) => setForm({ ...form, dosageForm: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option>Tablet</option>
+                    <option>Capsule</option>
+                    <option>Syrup</option>
+                    <option>Injection</option>
+                    <option>Infusion</option>
+                    <option>Powder</option>
+                  </select>
+                </div>
+                <SmartValidatedInput
+                  label="MRP (₹)"
                   type="number"
-                  placeholder="MRP (₹)"
+                  rules={['positive_number']}
                   value={form.mrp}
-                  onChange={(e) => setForm({ ...form, mrp: e.target.value })}
-                  className="rounded-xl border border-slate-300 px-3 py-2"
+                  onChange={(v) => setForm({ ...form, mrp: v })}
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
@@ -224,28 +311,98 @@ export function MedicineMasterTab() {
   )
 }
 
+interface InvoiceRecord {
+  id: string
+  invoiceNo: string
+  billType: string
+  patient?: PatientRecord
+  totalAmount: number
+  amountPaid: number
+  balanceDue: number
+  status: string
+  createdAt: string
+}
+
 export function BillingAndLabsTab({ patients }: { patients: PatientRecord[] }) {
-  const [invoices, setInvoices] = useState<Array<Record<string, unknown>>>([])
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>([])
   const [deposits, setDeposits] = useState<Array<Record<string, unknown>>>([])
   const [labs, setLabs] = useState<Array<Record<string, unknown>>>([])
+  const [loading, setLoading] = useState(true)
   const [resultInput, setResultInput] = useState<Record<string, string>>({})
 
   const loadData = useCallback(async () => {
-    const [bRes, lRes] = await Promise.all([fetch('/api/billing'), fetch('/api/labs')])
-    if (bRes.ok) {
-      const b = await bRes.json()
-      setInvoices(b.invoices || [])
-      setDeposits(b.deposits || [])
-    }
-    if (lRes.ok) {
-      const l = await lRes.json()
-      setLabs(l.orders || [])
+    setLoading(true)
+    try {
+      const [bRes, lRes] = await Promise.all([fetch('/api/billing'), fetch('/api/labs')])
+      if (bRes.ok) {
+        const b = await bRes.json()
+        setInvoices(b.invoices || [])
+        setDeposits(b.deposits || [])
+      }
+      if (lRes.ok) {
+        const l = await lRes.json()
+        setLabs(l.orders || [])
+      }
+    } finally {
+      setLoading(false)
     }
   }, [])
 
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // #1 Optimistic Lab Report Publishing
+  async function publishLabOptimistic(labId: string) {
+    const summary = resultInput[labId] || 'Within normal reference range'
+    const previous = labs
+    setLabs((prev) =>
+      prev.map((l) =>
+        String(l.id) === labId ? { ...l, status: 'completed', resultSummary: summary } : l
+      )
+    )
+    try {
+      const res = await fetch('/api/labs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'complete', id: labId, resultSummary: summary }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Lab report published immediately!')
+    } catch {
+      setLabs(previous)
+      toast.error('Failed to publish lab report — reverted.')
+    }
+  }
+
+  // #1 Optimistic Single Invoice Payment Collection
+  async function collectInvoiceOptimistic(inv: InvoiceRecord) {
+    const previous = invoices
+    setInvoices((prev) =>
+      prev.map((i) =>
+        i.id === inv.id
+          ? { ...i, amountPaid: i.totalAmount, balanceDue: 0, status: 'paid' }
+          : i
+      )
+    )
+    try {
+      const res = await fetch('/api/billing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'recordPayment',
+          invoiceId: inv.id,
+          amount: inv.balanceDue,
+          paymentMode: 'UPI',
+        }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success(`Collected ₹${inv.balanceDue.toLocaleString('en-IN')} against ${inv.invoiceNo}!`)
+    } catch {
+      setInvoices(previous)
+      toast.error('Payment update failed — reverted.')
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -279,153 +436,217 @@ export function BillingAndLabsTab({ patients }: { patients: PatientRecord[] }) {
           </button>
         </div>
 
-        <div className="space-y-2.5 text-xs">
-          {labs.map((lab) => {
-            const p = lab.patient as PatientRecord
-            return (
-              <div
-                key={String(lab.id)}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3"
-              >
-                <div>
-                  <span className="font-mono font-bold text-teal-700">{String(lab.orderNo)}</span> ·{' '}
-                  <strong>{String(lab.testName)}</strong> — {p?.name} ({p?.uhid})
-                  {Boolean(lab.resultSummary) && (
-                    <p className="mt-1 font-medium text-emerald-800">
-                      Result: {String(lab.resultSummary)}
-                    </p>
+        {labs.length === 0 ? (
+          <EmptyStateCard
+            icon={FlaskConical}
+            title="No lab investigations ordered yet"
+            description="Order pathology or radiology investigations from the Smart Rx Pad or click + Quick Lab Order."
+          />
+        ) : (
+          <div className="space-y-2.5 text-xs">
+            {labs.map((lab) => {
+              const p = lab.patient as PatientRecord
+              const labId = String(lab.id)
+              return (
+                <div
+                  key={labId}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3"
+                >
+                  <div>
+                    <span className="font-mono font-bold text-teal-700">{String(lab.orderNo)}</span> ·{' '}
+                    <strong>{String(lab.testName)}</strong> — {p?.name} ({p?.uhid})
+                    {Boolean(lab.resultSummary) && (
+                      <p className="mt-1 font-medium text-emerald-800">
+                        Result: {String(lab.resultSummary)}
+                      </p>
+                    )}
+                  </div>
+
+                  {lab.status !== 'completed' ? (
+                    <div className="flex gap-2">
+                      <input
+                        value={resultInput[labId] || ''}
+                        onChange={(e) =>
+                          setResultInput({ ...resultInput, [labId]: e.target.value })
+                        }
+                        placeholder="Enter lab result values..."
+                        className="rounded-lg border border-slate-300 bg-white px-2.5 py-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => publishLabOptimistic(labId)}
+                        className="rounded-lg bg-teal-600 px-3 py-1 font-bold text-white"
+                      >
+                        Publish Report
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 font-bold text-emerald-700">
+                      Completed
+                    </span>
                   )}
                 </div>
-
-                {lab.status !== 'completed' ? (
-                  <div className="flex gap-2">
-                    <input
-                      value={resultInput[String(lab.id)] || ''}
-                      onChange={(e) =>
-                        setResultInput({ ...resultInput, [String(lab.id)]: e.target.value })
-                      }
-                      placeholder="Enter lab result values..."
-                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await fetch('/api/labs', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            action: 'complete',
-                            id: lab.id,
-                            resultSummary:
-                              resultInput[String(lab.id)] || 'Within normal reference range',
-                          }),
-                        })
-                        toast.success('Lab report published!')
-                        loadData()
-                      }}
-                      className="rounded-lg bg-teal-600 px-3 py-1 font-bold text-white"
-                    >
-                      Publish Report
-                    </button>
-                  </div>
-                ) : (
-                  <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 font-bold text-emerald-700">
-                    Completed
-                  </span>
-                )}
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Unified OPD & IPD Invoices */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
-        <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
-          <CreditCard className="h-4 w-4 text-teal-600" />
-          Unified OPD &amp; IPD Invoices ({invoices.length}) &amp; Advance Deposits ({deposits.length})
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-100 bg-slate-50 text-slate-500 uppercase">
-              <tr>
-                <th className="py-2.5 px-3">Invoice No</th>
-                <th className="py-2.5 px-3">Type</th>
-                <th className="py-2.5 px-3">Patient</th>
-                <th className="py-2.5 px-3">Net Amount</th>
-                <th className="py-2.5 px-3">Paid</th>
-                <th className="py-2.5 px-3">Balance</th>
-                <th className="py-2.5 px-3">Status</th>
-                <th className="py-2.5 px-3">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {invoices.map((inv) => {
-                const p = inv.patient as PatientRecord
-                const balance = Number(inv.balanceAmount || 0)
-                return (
-                  <tr key={String(inv.id)}>
-                    <td className="py-2.5 px-3 font-mono font-bold">{String(inv.invoiceNo)}</td>
-                    <td className="py-2.5 px-3 font-bold text-teal-700">{String(inv.billType)}</td>
-                    <td className="py-2.5 px-3">
-                      {p?.name} <span className="text-slate-400">({p?.uhid})</span>
-                    </td>
-                    <td className="py-2.5 px-3 font-bold">
-                      ₹{Number(inv.netAmount).toLocaleString('en-IN')}
-                    </td>
-                    <td className="py-2.5 px-3 text-emerald-700 font-semibold">
-                      ₹{Number(inv.paidAmount).toLocaleString('en-IN')}
-                    </td>
-                    <td className="py-2.5 px-3 text-rose-700 font-bold">
-                      ₹{balance.toLocaleString('en-IN')}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                          inv.status === 'paid'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        {String(inv.status)}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      {balance > 0 && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await fetch('/api/billing', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                action: 'recordPayment',
-                                invoiceId: inv.id,
-                                amount: balance,
-                                paymentMode: 'UPI',
-                              }),
-                            })
-                            toast.success(`Collected ₹${balance} against ${inv.invoiceNo}!`)
-                            loadData()
-                          }}
-                          className="rounded-lg bg-emerald-600 px-2.5 py-1 font-bold text-white"
-                        >
-                          Collect ₹{balance}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+      {/* Unified OPD & IPD Invoices DataTable with Bulk Settlement */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <CreditCard className="h-4 w-4 text-teal-600" />
+            Unified OPD &amp; IPD Invoices ({invoices.length}) · Advance Deposits ({deposits.length})
+          </h3>
         </div>
+
+        <SaaSDataTable<InvoiceRecord>
+          data={invoices}
+          loading={loading}
+          rowKey={(i) => i.id}
+          searchPlaceholder="Search by Invoice No, Patient Name, or UHID..."
+          searchableText={(i) => `${i.invoiceNo} ${i.patient?.name || ''} ${i.patient?.uhid || ''}`}
+          exportFilename="hospital-invoices.csv"
+          filters={[
+            {
+              key: 'type',
+              label: 'Department',
+              options: [
+                { value: 'OPD', label: 'OPD Bills' },
+                { value: 'IPD', label: 'IPD Final Bills' },
+              ],
+              match: (i, val) => i.billType === val,
+            },
+            {
+              key: 'status',
+              label: 'Payment Status',
+              options: [
+                { value: 'paid', label: 'Paid' },
+                { value: 'unpaid', label: 'Pending / Partial' },
+              ],
+              match: (i, val) => (val === 'paid' ? i.status === 'paid' : i.status !== 'paid'),
+            },
+          ]}
+          bulkActions={[
+            {
+              label: 'Settle & Mark Selected Paid (UPI)',
+              variant: 'primary',
+              onExecute: async (ids, _rows, clear) => {
+                await fetch('/api/billing', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'bulkMarkPaid', ids, paymentMode: 'UPI' }),
+                })
+                toast.success(`Settled ${ids.length} invoice(s)!`)
+                clear()
+                loadData()
+              },
+            },
+          ]}
+          columns={[
+            {
+              key: 'invoiceNo',
+              header: 'Invoice No',
+              sortable: true,
+              sortValue: (i) => i.invoiceNo,
+              render: (i) => <span className="font-mono font-bold">{i.invoiceNo}</span>,
+            },
+            {
+              key: 'type',
+              header: 'Type',
+              sortable: true,
+              sortValue: (i) => i.billType,
+              render: (i) => <span className="font-bold text-teal-700">{i.billType}</span>,
+            },
+            {
+              key: 'patient',
+              header: 'Patient',
+              sortable: true,
+              sortValue: (i) => i.patient?.name || '',
+              render: (i) => (
+                <span>
+                  {i.patient?.name}{' '}
+                  <span className="text-slate-400">({i.patient?.uhid})</span>
+                </span>
+              ),
+            },
+            {
+              key: 'total',
+              header: 'Total Amount',
+              sortable: true,
+              sortValue: (i) => Number(i.totalAmount || 0),
+              render: (i) => (
+                <span className="font-bold">
+                  ₹{Number(i.totalAmount || 0).toLocaleString('en-IN')}
+                </span>
+              ),
+            },
+            {
+              key: 'paid',
+              header: 'Paid',
+              sortable: true,
+              sortValue: (i) => Number(i.amountPaid || 0),
+              render: (i) => (
+                <span className="text-emerald-700 font-semibold">
+                  ₹{Number(i.amountPaid || 0).toLocaleString('en-IN')}
+                </span>
+              ),
+            },
+            {
+              key: 'balance',
+              header: 'Balance Due',
+              sortable: true,
+              sortValue: (i) => Number(i.balanceDue || 0),
+              render: (i) => (
+                <span className="text-rose-700 font-bold">
+                  ₹{Number(i.balanceDue || 0).toLocaleString('en-IN')}
+                </span>
+              ),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (i) => (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                    i.status === 'paid'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {i.status}
+                </span>
+              ),
+            },
+            {
+              key: 'action',
+              header: 'Action',
+              render: (i) =>
+                Number(i.balanceDue || 0) > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => collectInvoiceOptimistic(i)}
+                    className="rounded-lg bg-emerald-600 px-2.5 py-1 font-bold text-white hover:bg-emerald-700"
+                  >
+                    Collect ₹{Number(i.balanceDue).toLocaleString('en-IN')}
+                  </button>
+                ) : null,
+            },
+          ]}
+        />
       </div>
     </div>
   )
 }
 
-export function HospitalSettingsTab({ onRefreshGlobal }: { onRefreshGlobal?: () => void }) {
+export function HospitalSettingsTab({
+  onRefreshGlobal,
+  onOpenWizard,
+}: {
+  onRefreshGlobal?: () => void
+  onOpenWizard?: () => void
+}) {
   const [settings, setSettings] = useState<ClinicSettingsData>({
     clinicDisplayName: '',
     tagline: '',
@@ -438,6 +659,7 @@ export function HospitalSettingsTab({ onRefreshGlobal }: { onRefreshGlobal?: () 
     upiId: '',
     rxFooterNote: '',
   })
+  const [orgPlan, setOrgPlan] = useState<{ name: string; tier: string; status: string } | null>(null)
   const [staff, setStaff] = useState<Array<Record<string, unknown>>>([])
   const [showAddStaff, setShowAddStaff] = useState(false)
   const [staffForm, setStaffForm] = useState({
@@ -449,12 +671,26 @@ export function HospitalSettingsTab({ onRefreshGlobal }: { onRefreshGlobal?: () 
     consultationFee: '600',
   })
 
+  // #6 Autosave Draft on White-Label Branding Settings
+  const { status: autosaveStatus, lastSavedAt } = useAutosaveDraft(
+    'hms_branding_settings_draft',
+    settings,
+    Boolean(settings.clinicDisplayName)
+  )
+
   const loadSettings = useCallback(async () => {
     const res = await fetch('/api/settings')
     if (res.ok) {
       const d = await res.json()
       if (d.settings) setSettings(d.settings)
       setStaff(d.staff || [])
+      if (d.organization?.subscription?.plan) {
+        setOrgPlan({
+          name: d.organization.subscription.plan.name,
+          tier: d.organization.subscription.plan.tier,
+          status: d.organization.subscription.status,
+        })
+      }
     }
   }, [])
 
@@ -468,90 +704,102 @@ export function HospitalSettingsTab({ onRefreshGlobal }: { onRefreshGlobal?: () 
       <form
         onSubmit={async (e) => {
           e.preventDefault()
+          const gstErr = settings.gstNumber
+            ? validateSmartField(settings.gstNumber, ['gstin'])
+            : null
+          if (gstErr) {
+            toast.error(gstErr)
+            return
+          }
           const res = await fetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'updateBranding', ...settings }),
           })
           if (res.ok) {
-            toast.success('Hospital letterhead & billing settings updated!')
+            toast.success('Hospital letterhead & billing settings saved!')
             onRefreshGlobal?.()
           }
         }}
         className="lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-4 text-xs"
       >
-        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-          <Building2 className="h-5 w-5 text-teal-600" />
-          <h3 className="text-base font-bold text-slate-900">
-            White-Label Hospital Letterhead, UHID &amp; GST Settings
-          </h3>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-teal-600" />
+            <h3 className="text-base font-bold text-slate-900">
+              White-Label Letterhead, UHID &amp; GST Settings
+            </h3>
+            {orgPlan && (
+              <TierBadge tier={orgPlan.tier} planName={orgPlan.name} status={orgPlan.status} />
+            )}
+          </div>
+          <AutosaveBadge status={autosaveStatus} lastSavedAt={lastSavedAt} />
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label className="block font-bold mb-1">Hospital / Clinic Display Name</label>
-            <input
-              value={settings.clinicDisplayName || ''}
-              onChange={(e) => setSettings({ ...settings, clinicDisplayName: e.target.value })}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block font-bold mb-1">Tagline / Accreditation</label>
-            <input
-              value={settings.tagline || ''}
-              onChange={(e) => setSettings({ ...settings, tagline: e.target.value })}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block font-bold mb-1">Address</label>
-            <input
-              value={settings.address || ''}
-              onChange={(e) => setSettings({ ...settings, address: e.target.value })}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="block font-bold mb-1">Reception Phone</label>
-            <input
-              value={settings.phone || ''}
-              onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="block font-bold mb-1">UHID Prefix</label>
-            <input
-              value={settings.uhidPrefix || 'HMS'}
-              onChange={(e) => setSettings({ ...settings, uhidPrefix: e.target.value })}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono font-bold"
-            />
-          </div>
-          <div>
-            <label className="block font-bold mb-1">UPI VPA for Instant QR Receipts</label>
-            <input
-              value={settings.upiId || ''}
-              onChange={(e) => setSettings({ ...settings, upiId: e.target.value })}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="block font-bold mb-1">GSTIN</label>
-            <input
-              value={settings.gstNumber || ''}
-              onChange={(e) => setSettings({ ...settings, gstNumber: e.target.value })}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono"
-            />
-          </div>
+          <SmartValidatedInput
+            className="sm:col-span-2"
+            label="Hospital / Clinic Display Name"
+            required
+            value={settings.clinicDisplayName || ''}
+            onChange={(v) => setSettings({ ...settings, clinicDisplayName: v })}
+          />
+          <SmartValidatedInput
+            className="sm:col-span-2"
+            label="Tagline / Accreditation"
+            value={settings.tagline || ''}
+            onChange={(v) => setSettings({ ...settings, tagline: v })}
+          />
+          <SmartValidatedInput
+            className="sm:col-span-2"
+            label="Address"
+            value={settings.address || ''}
+            onChange={(v) => setSettings({ ...settings, address: v })}
+          />
+          <SmartValidatedInput
+            label="Reception Phone"
+            rules={['indian_phone']}
+            value={settings.phone || ''}
+            onChange={(v) => setSettings({ ...settings, phone: v })}
+          />
+          <SmartValidatedInput
+            label="UHID Prefix"
+            rules={['uhid_prefix']}
+            value={settings.uhidPrefix || 'HMS'}
+            onChange={(v) => setSettings({ ...settings, uhidPrefix: v.toUpperCase() })}
+          />
+          <SmartValidatedInput
+            label="UPI VPA for Instant QR Receipts"
+            value={settings.upiId || ''}
+            onChange={(v) => setSettings({ ...settings, upiId: v })}
+          />
+          <SmartValidatedInput
+            label="15-Digit GSTIN (Optional)"
+            rules={['gstin']}
+            value={settings.gstNumber || ''}
+            onChange={(v) => setSettings({ ...settings, gstNumber: v.toUpperCase() })}
+            placeholder="27AABCS1429B1Z5"
+          />
         </div>
 
-        <button
-          type="submit"
-          className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-teal-700"
-        >
-          <CheckCircle2 className="h-4 w-4" /> Save Hospital Branding
-        </button>
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+          <button
+            type="submit"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-teal-700"
+          >
+            <CheckCircle2 className="h-4 w-4" /> Save Hospital Branding
+          </button>
+
+          {onOpenWizard && (
+            <button
+              type="button"
+              onClick={onOpenWizard}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-xs font-bold text-teal-800 hover:bg-teal-100"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Launch Guided Setup Wizard
+            </button>
+          )}
+        </div>
       </form>
 
       {/* Doctors & Staff Management */}
@@ -597,6 +845,11 @@ export function HospitalSettingsTab({ onRefreshGlobal }: { onRefreshGlobal?: () 
             <form
               onSubmit={async (e) => {
                 e.preventDefault()
+                const emailErr = validateSmartField(staffForm.email, ['required', 'email'])
+                if (emailErr) {
+                  toast.error(emailErr)
+                  return
+                }
                 const res = await fetch('/api/settings', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -614,37 +867,39 @@ export function HospitalSettingsTab({ onRefreshGlobal }: { onRefreshGlobal?: () 
               }}
               className="mt-4 space-y-3 text-xs"
             >
-              <input
+              <SmartValidatedInput
+                label="Full Name"
                 required
-                placeholder="Full Name (e.g. Dr. Sneha Patil)"
                 value={staffForm.name}
-                onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                onChange={(v) => setStaffForm({ ...staffForm, name: v })}
+                placeholder="Dr. Sneha Patil"
               />
-              <input
-                type="email"
+              <SmartValidatedInput
+                label="Work Email"
                 required
-                placeholder="Work Email"
+                rules={['email']}
                 value={staffForm.email}
-                onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                onChange={(v) => setStaffForm({ ...staffForm, email: v })}
+                placeholder="sneha@hospital.in"
               />
               <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={staffForm.role}
-                  onChange={(e) => setStaffForm({ ...staffForm, role: e.target.value })}
-                  className="rounded-xl border border-slate-300 px-3 py-2"
-                >
-                  <option value="DOCTOR">DOCTOR</option>
-                  <option value="NURSE">NURSE (IPD)</option>
-                  <option value="RECEPTIONIST">RECEPTIONIST</option>
-                  <option value="PHARMACIST">PHARMACIST</option>
-                </select>
-                <input
-                  placeholder="Specialization"
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Role</label>
+                  <select
+                    value={staffForm.role}
+                    onChange={(e) => setStaffForm({ ...staffForm, role: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option value="DOCTOR">DOCTOR</option>
+                    <option value="NURSE">NURSE (IPD)</option>
+                    <option value="RECEPTIONIST">RECEPTIONIST</option>
+                    <option value="PHARMACIST">PHARMACIST</option>
+                  </select>
+                </div>
+                <SmartValidatedInput
+                  label="Specialization"
                   value={staffForm.specialization}
-                  onChange={(e) => setStaffForm({ ...staffForm, specialization: e.target.value })}
-                  className="rounded-xl border border-slate-300 px-3 py-2"
+                  onChange={(v) => setStaffForm({ ...staffForm, specialization: v })}
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
