@@ -1,0 +1,821 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// 1. PLATFORM SAAS LAYER (Outside Tenant Scope — Managed by /platform-admin)
+// ============================================================================
+
+model PlatformAdmin {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String
+  isActive  Boolean   @default(true)
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Plan {
+  id             String   @id @default(cuid())
+  name           String
+  tier           String   @default("basic") // basic, advance, premium, enterprise, custom
+  doctorLimit    Int      @default(3)
+  branchLimit    Int      @default(1)
+  staffLimit     Int      @default(5)
+  bedLimit       Int      @default(10) // IPD bed capacity limit
+  storageLimitMB Int      @default(2048)
+  priceMonthly   Float    @default(1999)
+  priceYearly    Float    @default(19990)
+  // JSON string: { opd: true, ipd: true, medwiki: true, lab: true, pharmacy: true, customBranding: true, analytics: true }
+  featuresJson   String   @default("{}")
+  isCustom       Boolean  @default(false) // true when cloned via "Customize plan" for one clinic
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([isActive, sortOrder])
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  type      String   @default("hospital") // clinic, hospital, multispecialty
+  logo      String?
+  phone     String?
+  email     String?
+  address   String?
+  city      String?
+  state     String?
+  gstNumber String?
+  status    String   @default("active") // active, trialing, suspended, cancelled
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscription          Subscription?
+  settings              ClinicSettings?
+  branches              Branch[]
+  users                 User[]
+  patients              Patient[]
+  appointments          Appointment[]
+  opdQueue              OpdQueue[]
+  vitals                VitalSign[]
+  prescriptions         Prescription[]
+  labOrders             LabOrder[]
+  bedCategories         BedCategory[]
+  beds                  Bed[]
+  ipdAdmissions         IpdAdmission[]
+  bedTransfers          BedTransfer[]
+  ipdRoundNotes         IpdRoundNote[]
+  ipdMedicationOrders   IpdMedicationOrder[]
+  ipdChargeItems        IpdChargeItem[]
+  patientDeposits       PatientDeposit[]
+  invoices              Invoice[]
+  payments              Payment[]
+  customMedicines       Medicine[]
+  doctorMedicineDefaults DoctorMedicineDefault[]
+  auditLogs             AuditLog[]
+
+  @@index([status])
+}
+
+model Subscription {
+  id                 String       @id @default(cuid())
+  organizationId     String       @unique
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  planId             String
+  plan               Plan         @relation(fields: [planId], references: [id])
+  status             String       @default("active") // trialing, active, past_due, suspended, cancelled
+  billingCycle       String       @default("monthly") // monthly, yearly
+  paymentProvider    String?      // manual, razorpay, upi
+  paymentRef         String?
+  currentPeriodStart DateTime     @default(now())
+  currentPeriodEnd   DateTime?
+  trialEndsAt        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([planId])
+  @@index([status])
+}
+
+model PlatformInquiry {
+  id            String   @id @default(cuid())
+  clinicName    String
+  contactName   String
+  email         String
+  phone         String?
+  city          String?
+  facilityType  String   @default("Hospital (OPD + IPD)")
+  bedsCount     String?
+  selectedPlan  String?
+  message       String?
+  status        String   @default("new") // new, follow_up, demo, converted, closed
+  followUpsJson String   @default("[]") // [{ id, date, by, note, nextDate }]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model BlogPost {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  category    String   @default("Hospital SaaS")
+  description String
+  body        String
+  readTimeMin Int      @default(4)
+  isPublished Boolean  @default(true)
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, publishedAt])
+}
+
+// Tracks continuous MedWiki scraping / webhook ingestion runs
+model MedwikiSyncRun {
+  id            String    @id @default(cuid())
+  triggerSource String    @default("manual") // manual, webhook, cron, lightpanda_cli, seed
+  mode          String    @default("delta") // delta, full_az, brand_lookup, batch_import
+  queryOrTerm   String?
+  status        String    @default("completed") // running, completed, failed
+  foundCount    Int       @default(0)
+  insertedCount Int       @default(0)
+  updatedCount  Int       @default(0)
+  skippedCount  Int       @default(0)
+  errorCount    Int       @default(0)
+  durationMs    Int       @default(0)
+  logSummary    String?
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@index([startedAt])
+}
+
+// ============================================================================
+// 2. DYNAMIC MEDICINE MASTER (Global MedWiki Catalog + Tenant Custom Formulary)
+// ============================================================================
+// organizationId == null -> Global MedWiki drug catalog available to ALL SaaS clinics
+// organizationId != null -> Clinic-specific custom medicine / local stock override
+
+model Medicine {
+  id                   String        @id @default(cuid())
+  organizationId       String?
+  organization         Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // Compound normalized dedup key matching MedWiki scraper logic:
+  // global||name||generic||mfr||strength||form OR orgId||name||strength||form
+  dedupKey             String        @unique
+  name                 String
+  genericName          String?
+  composition          String?
+  brand                String?
+  manufacturer         String?
+  dosageForm           String        @default("Tablet") // Tablet, Capsule, Syrup, Injection, Infusion, Eye Drop, Cream, Inhaler...
+  strength             String?
+  packSize             String?
+  category             String        @default("General Medicine")
+  therapeuticClass     String?
+  mrp                  Float?
+  schedule             String?       // Schedule H, Schedule H1, Schedule X, Schedule G, OTC
+  isControlled         Boolean       @default(false)
+  requiresPrescription Boolean       @default(true)
+  defaultDosage        String        @default("1 tablet")
+  defaultFrequency     String        @default("1-0-1")
+  defaultDuration      String        @default("5 days")
+  defaultRoute         String        @default("Oral")
+  defaultTiming        String        @default("After Food")
+  defaultInstructions  String?
+  uses                 String?
+  sideEffects          String?
+  contraindications    String?
+  source               String        @default("medwiki") // medwiki, custom, clinic_import
+  sourceUrl            String?
+  // Lowercase pre-joined index column: name + genericName + composition + brand + manufacturer + category
+  searchText           String
+  usageCount           Int           @default(0)
+  lastSyncedAt         DateTime      @default(now())
+  isActive             Boolean       @default(true)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  prescriptionItems   PrescriptionItem[]
+  ipdMedicationOrders IpdMedicationOrder[]
+
+  @@index([organizationId, isActive])
+  @@index([isActive, usageCount])
+  @@index([name])
+  @@index([genericName])
+  @@index([category])
+}
+
+// Per-doctor prescribing memory: auto-learns preferred dose, frequency, timing & duration
+model DoctorMedicineDefault {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  doctorId       String
+  doctor         User         @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  medicineId     String?
+  medicineName   String
+  dosage         String?
+  frequency      String?
+  duration       String?
+  timing         String?
+  route          String?
+  instructions   String?
+  usageCount     Int          @default(1)
+  lastUsedAt     DateTime     @default(now())
+
+  @@unique([organizationId, doctorId, medicineName])
+  @@index([organizationId, doctorId, usageCount])
+}
+
+// ============================================================================
+// 3. TENANT CORE: BRANCHES, USERS, SETTINGS & AUDIT
+// ============================================================================
+
+model Branch {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  code           String
+  address        String?
+  city           String?
+  phone          String?
+  isMain         Boolean      @default(false)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  users         User[]
+  patients      Patient[]
+  beds          Bed[]
+  ipdAdmissions IpdAdmission[]
+  invoices      Invoice[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+model User {
+  id                   String       @id @default(cuid())
+  organizationId       String
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId             String?
+  branch               Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  email                String       @unique
+  password             String
+  // Encrypted copy of platform-generated password so Platform Admin can display/copy login credentials
+  generatedPasswordEnc String?
+  name                 String
+  phone                String?
+  role                 String       @default("doctor") // super_admin, admin, doctor, nurse, receptionist, pharmacist, billing
+  specialization       String?      // General Medicine, Pediatrics, Cardiology, Orthopedics, Gynecology, ICU...
+  qualification        String?      // MBBS, MD, MS, DNB...
+  registrationNo       String?      // Medical Council Reg No (printed on Rx & Discharge Summary)
+  consultationFee      Float        @default(500)
+  takesConsultations   Boolean      @default(true)
+  isActive             Boolean      @default(true)
+  lastLogin            DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  appointments           Appointment[]           @relation("DoctorAppointments")
+  opdQueueItems          OpdQueue[]              @relation("DoctorQueue")
+  prescriptions          Prescription[]          @relation("DoctorPrescriptions")
+  admittedPatients       IpdAdmission[]          @relation("AdmittingDoctor")
+  roundNotes             IpdRoundNote[]          @relation("RoundAuthor")
+  ipdMedicationOrders    IpdMedicationOrder[]    @relation("OrderingDoctor")
+  doctorMedicineDefaults DoctorMedicineDefault[]
+
+  @@index([organizationId, role, isActive])
+}
+
+model ClinicSettings {
+  id                  String       @id @default(cuid())
+  organizationId      String       @unique
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clinicDisplayName   String
+  tagline             String?
+  address             String?
+  phone               String?
+  emergencyPhone      String?
+  email               String?
+  gstNumber           String?
+  uhidPrefix          String       @default("UHID")
+  invoicePrefix       String       @default("INV")
+  ipdPrefix           String       @default("IPD")
+  upiId               String?
+  bankName            String?
+  bankAccountNo       String?
+  bankIfsc            String?
+  headerColor         String       @default("#0d9488")
+  rxFooterNote        String       @default("In case of emergency, please contact Hospital 24x7 Emergency Desk immediately.")
+  defaultLanguage     String       @default("en") // en, hi, mr
+  updatedAt           DateTime     @updatedAt
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorName      String
+  actorRole      String
+  action         String
+  entity         String
+  details        String?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+}
+
+// ============================================================================
+// 4. PATIENT MASTER & OPD MODULE
+// ============================================================================
+
+model Patient {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId          String?
+  branch            Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  uhid              String       // Auto per tenant: UHID-0001
+  name              String
+  gender            String       @default("Male") // Male, Female, Other
+  dateOfBirth       DateTime?
+  ageYears          Int?
+  bloodGroup        String?      // A+, A-, B+, B-, O+, O-, AB+, AB-
+  phone             String
+  alternatePhone    String?
+  email             String?
+  address           String?
+  city              String?
+  pincode           String?
+  abhaNumber        String?      // Ayushman Bharat Health Account
+  aadhaarLast4      String?
+  allergies         String?      // Comma-separated drug/food allergies (highlighted in Rx & IPD!)
+  chronicConditions String?      // Diabetes, Hypertension, Asthma, Thyroid...
+  emergencyContact  String?
+  emergencyPhone    String?
+  insuranceProvider String?
+  insurancePolicyNo String?
+  isVip             Boolean      @default(false)
+  status            String       @default("active")
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  appointments    Appointment[]
+  opdQueue        OpdQueue[]
+  vitals          VitalSign[]
+  prescriptions   Prescription[]
+  labOrders       LabOrder[]
+  ipdAdmissions   IpdAdmission[]
+  patientDeposits PatientDeposit[]
+  invoices        Invoice[]
+  payments        Payment[]
+
+  @@unique([organizationId, uhid])
+  @@index([organizationId, phone])
+  @@index([organizationId, name])
+  @@index([organizationId, createdAt])
+}
+
+model Appointment {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patientId      String
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId       String?
+  doctor         User?        @relation("DoctorAppointments", fields: [doctorId], references: [id], onDelete: SetNull)
+  appointmentDate DateTime
+  slotTime       String       @default("10:00")
+  type           String       @default("OPD Consultation") // OPD Consultation, Follow-up, Emergency, Procedure
+  reason         String?
+  status         String       @default("scheduled") // scheduled, checked_in, completed, cancelled, no_show
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, appointmentDate, status])
+}
+
+model OpdQueue {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patientId      String
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId       String?
+  doctor         User?        @relation("DoctorQueue", fields: [doctorId], references: [id], onDelete: SetNull)
+  tokenNumber    Int
+  queueDate      String       // YYYY-MM-DD in clinic local timezone
+  priority       String       @default("normal") // normal, urgent, emergency, vip
+  visitType      String       @default("New Visit") // New Visit, Follow-up, Emergency
+  chiefComplaint String?
+  status         String       @default("waiting") // waiting, vitals_done, in_consultation, completed, admitted_ipd, cancelled
+  checkedInAt    DateTime     @default(now())
+  calledAt       DateTime?
+  completedAt    DateTime?
+
+  @@index([organizationId, queueDate, status])
+}
+
+model VitalSign {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patientId      String
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  ipdAdmissionId String?
+  ipdAdmission   IpdAdmission? @relation(fields: [ipdAdmissionId], references: [id], onDelete: SetNull)
+  bpSystolic     Int?
+  bpDiastolic    Int?
+  pulse          Int?
+  temperatureF   Float?
+  spo2           Int?
+  respiratoryRate Int?
+  weightKg       Float?
+  heightCm       Float?
+  bloodSugar     Float?
+  notes          String?
+  recordedBy     String?
+  recordedAt     DateTime     @default(now())
+
+  @@index([organizationId, patientId, recordedAt])
+  @@index([ipdAdmissionId])
+}
+
+model Prescription {
+  id                  String       @id @default(cuid())
+  organizationId      String
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  prescriptionNo      String
+  patientId           String
+  patient             Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId            String
+  doctor              User         @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
+  opdQueueId          String?
+  chiefComplaints     String?
+  diagnosis           String
+  icdCode             String?
+  clinicalNotes       String?
+  labInvestigations   String?      // Requested lab tests
+  advice              String?      // Diet/lifestyle instructions (EN / HI / MR)
+  adviceLanguage      String       @default("en")
+  followUpDate        DateTime?
+  recommendIpdAdmit   Boolean      @default(false)
+  vitalsSnapshotJson  String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  items PrescriptionItem[]
+
+  @@unique([organizationId, prescriptionNo])
+  @@index([organizationId, patientId, createdAt])
+}
+
+model PrescriptionItem {
+  id             String       @id @default(cuid())
+  prescriptionId String
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  medicineId     String?
+  medicine       Medicine?    @relation(fields: [medicineId], references: [id], onDelete: SetNull)
+  medicineName   String
+  genericName    String?
+  dosageForm     String?
+  strength       String?
+  dosage         String       @default("1 tablet")
+  frequency      String       @default("1-0-1")
+  timing         String       @default("After Food")
+  duration       String       @default("5 days")
+  route          String       @default("Oral")
+  quantity       Int          @default(10)
+  instructions   String?
+
+  @@index([prescriptionId])
+}
+
+model LabOrder {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patientId      String
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  ipdAdmissionId String?
+  ipdAdmission   IpdAdmission? @relation(fields: [ipdAdmissionId], references: [id], onDelete: SetNull)
+  orderNo        String
+  testName       String
+  category       String       @default("Pathology") // Pathology, Biochemistry, Hematology, Radiology, Microbiology, Cardiology
+  priority       String       @default("routine") // routine, urgent, stat
+  price          Float        @default(0)
+  status         String       @default("ordered") // ordered, sample_collected, completed, cancelled
+  resultSummary  String?
+  normalRange    String?
+  isAbnormal     Boolean      @default(false)
+  orderedBy      String?
+  orderedAt      DateTime     @default(now())
+  completedAt    DateTime?
+
+  @@unique([organizationId, orderNo])
+  @@index([organizationId, status])
+}
+
+// ============================================================================
+// 5. IPD MODULE (Modeled on ICTHospital + Indian Multi-Specialty Workflows)
+// ============================================================================
+// Core invariant from ICTHospital:
+//   1. An active admission is one where `dischargedAt IS NULL`.
+//   2. A bed can have AT MOST ONE active admission at a time.
+//   3. A patient can have AT MOST ONE active admission at a time.
+//   4. Bed occupancy is derived from active `IpdAdmission` rows + transactional sync.
+
+model BedCategory {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name             String       // General Ward, Semi-Private, Private Deluxe, ICU, NICU, Emergency
+  code             String       // GEN, SEMI, PVT, ICU, NICU, ER
+  floor            String       @default("1st Floor")
+  dailyRate        Float        @default(1500) // Room/Bed charge per day
+  nursingChargeDay Float        @default(300)  // Nursing & doctor round charge per day
+  description      String?
+  color            String       @default("#0d9488")
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  beds Bed[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+model Bed {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  categoryId     String
+  category       BedCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  bedNumber      String       // e.g. "GEN-101", "ICU-01", "PVT-302"
+  floor          String       @default("1st Floor")
+  hasOxygen      Boolean      @default(false)
+  hasVentilator  Boolean      @default(false)
+  hasMonitor     Boolean      @default(false)
+  // "free", "occupied", "maintenance", "cleaning"
+  // Active occupancy truth is IpdAdmission(dischargedAt: null), synced in transactions!
+  status         String       @default("free")
+  notes          String?
+  lastAdmittedAt DateTime?
+  lastDischargedAt DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  admissions    IpdAdmission[]
+  transfersFrom BedTransfer[]  @relation("TransferFromBed")
+  transfersTo   BedTransfer[]  @relation("TransferToBed")
+
+  @@unique([organizationId, bedNumber])
+  @@index([organizationId, categoryId, status])
+}
+
+model IpdAdmission {
+  id                   String       @id @default(cuid())
+  organizationId       String
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId             String?
+  branch               Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  admissionNo          String       // IPD-0001 per tenant
+  patientId            String
+  patient              Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  bedId                String
+  bed                  Bed          @relation(fields: [bedId], references: [id])
+  admittingDoctorId    String
+  admittingDoctor      User         @relation("AdmittingDoctor", fields: [admittingDoctorId], references: [id])
+  admissionType        String       @default("Emergency") // Emergency, Planned, Transfer, Maternity, Surgical
+  admittedAt           DateTime     @default(now())
+  expectedDischargeAt  DateTime?
+  // NULL while admitted! Non-null means discharged (ICTHospital `d_time` invariant).
+  dischargedAt         DateTime?
+  status               String       @default("admitted") // admitted, discharged, lama, referred, expired
+  provisionalDiagnosis String
+  finalDiagnosis       String?
+  chiefComplaints      String?
+  historyOfPresentIllness String?
+  allergiesSnapshot    String?
+  attendantName        String?
+  attendantRelation    String?
+  attendantPhone       String?
+  isMlc                Boolean      @default(false) // Medico-Legal Case
+  insuranceTpa         String?
+  preAuthAmount        Float        @default(0)
+  // Discharge summary fields
+  conditionAtDischarge String?      // Improved, Recovered, Stable, LAMA, Referred
+  dischargeSummary     String?      // Clinical course in hospital + treatment given
+  dischargeAdvice      String?      // Diet, activity, emergency warning signs
+  dischargeMedicationsJson String?  // JSON array of discharge home medications
+  followUpDate         DateTime?
+  finalInvoiceId       String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  vitals           VitalSign[]
+  roundNotes       IpdRoundNote[]
+  medicationOrders IpdMedicationOrder[]
+  chargeItems      IpdChargeItem[]
+  deposits         PatientDeposit[]
+  bedTransfers     BedTransfer[]
+  labOrders        LabOrder[]
+
+  @@unique([organizationId, admissionNo])
+  @@index([organizationId, dischargedAt])
+  @@index([organizationId, bedId, dischargedAt])
+  @@index([organizationId, patientId, dischargedAt])
+}
+
+model BedTransfer {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ipdAdmissionId String
+  ipdAdmission   IpdAdmission @relation(fields: [ipdAdmissionId], references: [id], onDelete: Cascade)
+  fromBedId      String
+  fromBed        Bed          @relation("TransferFromBed", fields: [fromBedId], references: [id])
+  toBedId        String
+  toBed          Bed          @relation("TransferToBed", fields: [toBedId], references: [id])
+  reason         String?
+  transferredBy  String?
+  transferredAt  DateTime     @default(now())
+
+  @@index([ipdAdmissionId])
+}
+
+model IpdRoundNote {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ipdAdmissionId String
+  ipdAdmission   IpdAdmission @relation(fields: [ipdAdmissionId], references: [id], onDelete: Cascade)
+  authorId       String?
+  author         User?        @relation("RoundAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  authorName     String
+  noteType       String       @default("Doctor Round") // Doctor Round, Nursing Handover, ICU Chart, Surgery/OT Note
+  observations   String       // SOAP / clinical findings
+  plan           String?      // Updated instructions / plan of care
+  vitalsText     String?      // e.g. "BP 120/80, SpO2 98%, Pulse 78, Temp 98.6F"
+  recordedAt     DateTime     @default(now())
+
+  @@index([ipdAdmissionId, recordedAt])
+}
+
+model IpdMedicationOrder {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ipdAdmissionId String
+  ipdAdmission   IpdAdmission @relation(fields: [ipdAdmissionId], references: [id], onDelete: Cascade)
+  medicineId     String?
+  medicine       Medicine?    @relation(fields: [medicineId], references: [id], onDelete: SetNull)
+  orderedById    String?
+  orderedBy      User?        @relation("OrderingDoctor", fields: [orderedById], references: [id], onDelete: SetNull)
+  medicineName   String
+  genericName    String?
+  strength       String?
+  dosageForm     String?
+  dosage         String       @default("1 vial")
+  route          String       @default("IV") // IV, IM, SC, Oral, Nebulization, Topical
+  frequency      String       @default("1-0-1") // STAT, OD, BD (1-0-1), TDS (1-1-1), QID, SOS
+  duration       String       @default("3 days")
+  instructions   String?
+  unitPrice      Float        @default(0)
+  status         String       @default("active") // active, stat_given, stopped, completed
+  lastGivenAt    DateTime?
+  dosesGiven     Int          @default(0)
+  startDate      DateTime     @default(now())
+  stoppedAt      DateTime?
+
+  @@index([ipdAdmissionId, status])
+}
+
+model IpdChargeItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ipdAdmissionId String
+  ipdAdmission   IpdAdmission @relation(fields: [ipdAdmissionId], references: [id], onDelete: Cascade)
+  category       String       @default("Procedure") // Procedure, OT/Surgery, Doctor Visit, Consumables, Pharmacy, Lab, Oxygen/Ventilator
+  description    String
+  quantity       Float        @default(1)
+  unitRate       Float
+  amount         Float
+  chargedAt      DateTime     @default(now())
+  addedBy        String?
+
+  @@index([ipdAdmissionId, chargedAt])
+}
+
+// ICTHospital `patient_deposit` — Advance / Interim payments against IPD or patient account
+model PatientDeposit {
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receiptNo      String        // DEP-0001 per tenant
+  patientId      String
+  patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  ipdAdmissionId String?
+  ipdAdmission   IpdAdmission? @relation(fields: [ipdAdmissionId], references: [id], onDelete: SetNull)
+  amount         Float
+  paymentMode    String        @default("UPI") // Cash, UPI, Card, Bank Transfer, Insurance Pre-Auth
+  referenceNo    String?
+  notes          String?
+  receivedBy     String?
+  depositedAt    DateTime      @default(now())
+
+  @@unique([organizationId, receiptNo])
+  @@index([ipdAdmissionId])
+  @@index([organizationId, patientId])
+}
+
+// ============================================================================
+// 6. UNIFIED BILLING, INVOICES & PAYMENTS (OPD + IPD + LAB + PHARMACY)
+// ============================================================================
+
+model Invoice {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  invoiceNo      String       // INV-0001 per tenant
+  patientId      String
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  ipdAdmissionId String?
+  billType       String       @default("OPD") // OPD, IPD, Pharmacy, Lab
+  subtotal       Float        @default(0)
+  discount       Float        @default(0)
+  gstPercent     Float        @default(0)
+  gstAmount      Float        @default(0)
+  depositApplied Float        @default(0) // Advance deposits adjusted on IPD final bill
+  totalAmount    Float        @default(0)
+  amountPaid     Float        @default(0)
+  balanceDue     Float        @default(0)
+  status         String       @default("pending") // paid, partially_paid, pending, cancelled
+  paymentMode    String?
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  items    InvoiceItem[]
+  payments Payment[]
+
+  @@unique([organizationId, invoiceNo])
+  @@index([organizationId, status, createdAt])
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  category    String  @default("Consultation")
+  description String
+  quantity    Float   @default(1)
+  unitRate    Float
+  amount      Float
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentNo      String
+  patientId      String
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  invoiceId      String?
+  invoice        Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  amount         Float
+  paymentMode    String       @default("UPI") // Cash, UPI, Card, Bank Transfer, Insurance
+  referenceNo    String?
+  notes          String?
+  paidAt         DateTime     @default(now())
+
+  @@unique([organizationId, paymentNo])
+  @@index([organizationId, paidAt])
+}

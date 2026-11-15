@@ -1,0 +1,44 @@
+{
+  "name": "aethermed-hms-saas",
+  "version": "2.0.0",
+  "private": true,
+  "description": "AetherMed Cloud HMS — Multi-Tenant Hospital & Clinic SaaS (OPD + IPD + Dynamic MedWiki Drug Engine + Platform Admin + PWA)",
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "build": "npm run db:generate && next build",
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "db:generate": "PRISMA_SCHEMA_ENGINE_BINARY=/bin/true PRISMA_QUERY_ENGINE_LIBRARY=/bin/true PRISMA_QUERY_ENGINE_BINARY=/bin/true PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 prisma generate",
+    "db:push": "tsx prisma/push-schema.ts",
+    "db:push:mysql": "prisma db push --schema=prisma/schema.mysql.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:setup": "npm run db:generate && npm run db:push && npm run db:seed",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@prisma/adapter-libsql": "^6.11.1",
+    "@prisma/client": "^6.11.1",
+    "bcryptjs": "^3.0.2",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.511.0",
+    "motion": "^12.16.0",
+    "next": "^15.3.3",
+    "prisma": "^6.11.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sonner": "^2.0.5",
+    "tailwind-merge": "^3.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@tailwindcss/postcss": "^4.1.8",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.15.29",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.6",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^4.1.8",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,28 +1,36 @@
+# Dependencies & build outputs
 node_modules/
+.next/
+out/
 dist/
+build/
 coverage/
-*.log
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment variables (never commit real secrets)
 .env
 .env.local
-backend/.env
-backend/src/.env
-frontend/.env
-*.sql
-tmp_screenshots/
+.env.*.local
 
-# Local deploy credentials / helper — never commit
-deploy_all.py
-deploy.local.env
+# Local SQLite database files
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
 
-# Python
+# Logs & runtime state
+*.log
+npm-debug.log*
+.playwright-cli/
+test-results/
+playwright-report/
+
+# Python / MedWiki scraper runtime artifacts
 __pycache__/
 *.pyc
-
-# Internal audit docs / generated artifacts / scratch files
-AUDIT_REPORT.md
-KPI_AUDIT_RCA.md
-*_tmp.cjs
-frontend/eslint_output.json
-frontend/lint_output.txt
-eslint_output.json
-lint_output.txt
+.venv/
+medwiki/venv/
+medwiki/*.lock
+medwiki/scraper_checkpoint.json
+medwiki/*.sql
