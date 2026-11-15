@@ -12,13 +12,22 @@ import {
   HeartPulse,
   LogOut,
   ArrowRight,
-  ChevronRight,
   ShieldAlert,
   RefreshCw,
   Sun,
   Moon,
+  Cloud,
 } from 'lucide-react'
 import { useTheme } from '@/components/providers/ThemeProvider'
+import { useOffline } from '@/hooks/useOffline'
+import { OfflineBadge, SyncPanel } from '@/components/offline/OfflineBadge'
+import { OcrPrescriptionScanner } from '@/components/ocr/OcrPrescriptionScanner'
+import {
+  offlineGetAll,
+  offlinePut,
+  enqueueMutation,
+  getPendingMutations,
+} from '@/lib/offline-db'
 
 interface PatientSection {
   id: 'profile' | 'prescriptions' | 'laborders' | 'ipdadmissions' | 'appointments' | 'invoices'
@@ -44,9 +53,18 @@ const PATIENT_SECTIONS: PatientSection[] = [
   { id: 'invoices', label: 'Bills', icon: <CreditCard className="h-3 w-3" /> },
 ]
 
+const STORE_MAP: Record<string, string> = {
+  prescriptions: 'prescriptions',
+  laborders: 'labOrders',
+  ipdadmissions: 'ipdAdmissions',
+  appointments: 'appointments',
+  invoices: 'invoices',
+}
+
 export default function PatientDashboardPage() {
   const router = useRouter()
   const { resolvedTheme, toggleTheme } = useTheme()
+  const { isOnline, syncing, stats, syncNow } = useOffline()
   const [session, setSession] = useState<PatientSession | null>(null)
   const [profile, setProfile] = useState<any>(null)
   const [prescriptions, setPrescriptions] = useState<any[]>([])
@@ -56,6 +74,8 @@ export default function PatientDashboardPage() {
   const [invoices, setInvoices] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [activeSection, setActiveSection] = useState<'profile' | 'prescriptions' | 'laborders' | 'ipdadmissions' | 'appointments' | 'invoices'>('profile')
+  const [showSync, setShowSync] = useState(false)
+  const [ocrResult, setOcrResult] = useState<{ extractedText: string; parsedFields: any; fileName: string } | null>(null)
 
   useEffect(() => {
     const token = document.cookie
@@ -81,11 +101,32 @@ export default function PatientDashboardPage() {
   }, [router])
 
   async function fetchSection(section: typeof activeSection) {
+    // Offline-first: try local store first when offline
+    if (!isOnline) {
+      try {
+        const store = STORE_MAP[section]
+        if (store) {
+          const rows = await offlineGetAll<any>(store)
+          const filtered = rows.filter((r: any) => r.patientId === session?.patientId)
+          if (section === 'prescriptions') setPrescriptions(filtered)
+          if (section === 'laborders') setLabOrders(filtered)
+          if (section === 'ipdadmissions') setAdmissions(filtered)
+          if (section === 'appointments') setAppointments(filtered)
+          if (section === 'invoices') setInvoices(filtered)
+          if (section === 'profile') setProfile(filtered[0] || null)
+        }
+      } catch {}
+      return
+    }
+
     try {
       const res = await fetch(`/api/patient/records?section=${section}`)
       const data = await res.json()
       if (section === 'profile') setProfile(data.patient)
-      if (section === 'prescriptions') setPrescriptions(data.prescriptions || [])
+      if (section === 'prescriptions') {
+        setPrescriptions(data.prescriptions || [])
+        await offlinePut('prescriptions', { id: 'batch', items: data.prescriptions || [] })
+      }
       if (section === 'laborders') setLabOrders(data.labOrders || [])
       if (section === 'ipdadmissions') setAdmissions(data.admissions || [])
       if (section === 'appointments') setAppointments(data.appointments || [])
@@ -104,7 +145,14 @@ export default function PatientDashboardPage() {
     fetchSection('appointments')
     fetchSection('invoices')
     setLoading(false)
-  }, [session])
+  }, [session, isOnline])
+
+  // Auto-sync when reconnected
+  useEffect(() => {
+    if (isOnline && stats.pending > 0) {
+      syncNow()
+    }
+  }, [isOnline, stats.pending, syncNow])
 
   async function handleLogout() {
     await fetch('/api/patient/auth', {
@@ -113,6 +161,51 @@ export default function PatientDashboardPage() {
       body: JSON.stringify({ action: 'logout' }),
     })
     router.push('/patient/login')
+  }
+
+  async function handleBookAppointment() {
+    const date = prompt('Appointment date (YYYY-MM-DD):')
+    const time = prompt('Slot time (e.g. 10:00):', '10:00')
+    if (!date || !time) return
+    const payload = {
+      organizationId: session!.organizationId,
+      patientId: session!.patientId,
+      appointmentDate: date,
+      slotTime: time,
+      type: 'OPD Consultation',
+      status: 'scheduled',
+    }
+    if (!isOnline) {
+      await enqueueMutation({
+        action: 'create',
+        entity: 'appointment',
+        endpoint: '/api/patient/records',
+        payload: { action: 'bookAppointment', ...payload },
+        patientId: session!.patientId,
+        orgId: session!.organizationId,
+      })
+      setAppointments((prev) => [...prev, { ...payload, status: 'scheduled', id: 'local-' + Date.now() }])
+      return
+    }
+    try {
+      const res = await fetch('/api/patient/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bookAppointment', ...payload }),
+      })
+      if (res.ok) {
+        fetchSection('appointments')
+      }
+    } catch {
+      await enqueueMutation({
+        action: 'create',
+        entity: 'appointment',
+        endpoint: '/api/patient/records',
+        payload: { action: 'bookAppointment', ...payload },
+        patientId: session!.patientId,
+        orgId: session!.organizationId,
+      })
+    }
   }
 
   if (!session) return null
@@ -135,6 +228,16 @@ export default function PatientDashboardPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <OfflineBadge />
+            <button
+              type="button"
+              onClick={() => setShowSync(!showSync)}
+              className="rounded-lg p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              title="Sync status"
+            >
+              <Cloud className="h-4 w-4" />
+              <span className="hidden sm:inline-block ml-1 text-xs font-medium">{stats.pending > 0 ? stats.pending : '0'}</span>
+            </button>
             <button
               type="button"
               onClick={toggleTheme}
@@ -157,6 +260,8 @@ export default function PatientDashboardPage() {
           </div>
         </div>
       </header>
+
+      {showSync && <SyncPanel open={showSync} onClose={() => setShowSync(false)} />}
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
         {/* Welcome Banner */}
@@ -254,6 +359,11 @@ export default function PatientDashboardPage() {
                 </button>
               )
             })}
+            {!isOnline && (
+              <span className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                <Cloud className="h-3 w-3" /> Offline — local data
+              </span>
+            )}
           </div>
 
           {/* Tab Content */}
@@ -294,9 +404,30 @@ export default function PatientDashboardPage() {
 
             {activeSection === 'prescriptions' && (
               <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-teal-600 dark:text-teal-400" /> Prescriptions
-                </h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-teal-600 dark:text-teal-400" /> Prescriptions
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <OcrPrescriptionScanner
+                      source="prescription"
+                      patientId={session.patientId}
+                      className="hidden sm:block"
+                      onComplete={(ocr) => setOcrResult(ocr)}
+                    />
+                  </div>
+                </div>
+
+                {ocrResult && (
+                  <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20 p-4 mb-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">Extracted Text</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">{ocrResult.extractedText.slice(0, 500)}{ocrResult.extractedText.length > 500 ? '…' : ''}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
+                      {ocrResult.parsedFields.medicineCount} medicine(s) detected · {ocrResult.parsedFields.diagnosis ? 'Diagnosis found' : 'No diagnosis'}
+                    </p>
+                  </div>
+                )}
+
                 {prescriptions.length === 0 ? (
                   <div className="text-center py-10">
                     <p className="text-slate-500 dark:text-slate-400">No prescriptions yet.</p>
@@ -381,9 +512,18 @@ export default function PatientDashboardPage() {
 
             {activeSection === 'appointments' && (
               <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-violet-600 dark:text-violet-400" /> Appointments
-                </h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-violet-600 dark:text-violet-400" /> Appointments
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={handleBookAppointment}
+                    className="rounded-xl bg-teal-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-teal-700 transition disabled:opacity-50"
+                  >
+                    <ArrowRight className="h-3 w-3 mr-1" /> Book
+                  </button>
+                </div>
                 <div className="bg-teal-50 dark:bg-teal-900/20 rounded-xl p-4 mb-6">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400 mb-3">
                     Book a New Appointment
