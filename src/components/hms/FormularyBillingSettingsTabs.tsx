@@ -42,6 +42,8 @@ export function MedicineMasterTab() {
     mrp: '',
     defaultFrequency: '1-0-1',
     defaultDuration: '5 days',
+    defaultInstructions: '',
+    language: 'en',
   })
 
   const loadMeds = useCallback(async () => {
@@ -286,15 +288,39 @@ export function MedicineMasterTab() {
                     <option>Powder</option>
                   </select>
                 </div>
-                <SmartValidatedInput
-                  label="MRP (₹)"
-                  type="number"
-                  rules={['positive_number']}
-                  value={form.mrp}
-                  onChange={(v) => setForm({ ...form, mrp: v })}
+              <SmartValidatedInput
+                label="MRP (₹)"
+                type="number"
+                rules={['positive_number']}
+                value={form.mrp}
+                onChange={(v) => setForm({ ...form, mrp: v })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Usage Instructions</label>
+                <textarea
+                  value={form.defaultInstructions}
+                  onChange={(e) => setForm({ ...form, defaultInstructions: e.target.value })}
+                  rows={3}
+                  placeholder="e.g. Take one tablet after meals. Do not crush or chew."
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex items-end">
+                <label className="block font-bold text-slate-700 mb-1 mr-2">Language</label>
+                <select
+                  value={form.language}
+                  onChange={(e) => setForm({ ...form, language: e.target.value })}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                >
+                  <option value="en">English</option>
+                  <option value="hi">हिन्दी</option>
+                  <option value="mr">मराठी</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAdd(false)}

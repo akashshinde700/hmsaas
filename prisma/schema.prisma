@@ -200,6 +200,7 @@ model Medicine {
   defaultRoute         String        @default("Oral")
   defaultTiming        String        @default("After Food")
   defaultInstructions  String?
+  language             String       @default("en") // en, hi, mr
   uses                 String?
   sideEffects          String?
   contraindications    String?
