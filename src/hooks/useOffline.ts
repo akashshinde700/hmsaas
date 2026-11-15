@@ -9,6 +9,7 @@ import {
 } from '@/lib/offline-db'
 
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : ''
+const SYNC_TAG = 'aethermed-sync-mutations'
 
 export function useOffline() {
   const [isOnline, setIsOnline] = useState(
@@ -17,6 +18,7 @@ export function useOffline() {
   const [syncing, setSyncing] = useState(false)
   const [stats, setStats] = useState({ pending: 0, synced: 0, failed: 0 })
 
+  // Online/offline detection
   useEffect(() => {
     const onOnline = () => setIsOnline(true)
     const onOffline = () => setIsOnline(false)
@@ -28,6 +30,7 @@ export function useOffline() {
     }
   }, [])
 
+  // Refresh stats when online status changes
   useEffect(() => {
     let mounted = true
     ;(async () => {
@@ -38,6 +41,27 @@ export function useOffline() {
       mounted = false
     }
   }, [isOnline])
+
+  // Listen for sync completion messages from service worker
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'SYNC_COMPLETED') {
+        setStats((s) => ({ ...s, pending: 0 }))
+        setSyncing(false)
+      }
+      if (event.data?.type === 'SYNC_FAILED') {
+        setSyncing(false)
+      }
+    }
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', onMessage)
+    }
+    return () => {
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', onMessage)
+      }
+    }
+  }, [])
 
   const syncNow = useCallback(async () => {
     if (syncing) return
@@ -65,6 +89,28 @@ export function useOffline() {
       setSyncing(false)
     }
   }, [syncing])
+
+  // Register background sync when coming online (service worker handles the actual flush)
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      if (!mounted || !isOnline) return
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.ready
+          await (registration as any).sync.register(SYNC_TAG)
+        } catch {
+          // Background Sync API not supported — fall back to manual sync
+          await syncNow()
+        }
+      } else {
+        await syncNow()
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [isOnline, syncNow])
 
   return { isOnline, syncing, stats, syncNow }
 }
