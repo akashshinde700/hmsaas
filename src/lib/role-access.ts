@@ -378,7 +378,7 @@ export function inferClinicModel(
 ): ClinicModelConfig {
   const hasOPD = planFeatures.opd
   const hasIPD = planFeatures.ipd
-  const singleDoctor = organizationType === 'clinic' || !hasIpdBeds
+  const singleDoctor = organizationType === 'clinic' || hasIpdBeds === false
 
   let modelType: ClinicModelConfig['modelType']
   if (hasOPD && hasIPD) modelType = 'opd_ipd'

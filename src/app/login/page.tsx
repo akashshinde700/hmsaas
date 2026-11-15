@@ -133,10 +133,12 @@ export default function TenantLoginPage() {
 
             <form onSubmit={submitLogin} className="mt-7 space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                <label htmlFor="work-email" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
                   Work Email
                 </label>
                 <input
+                  id="work-email"
+                  autoComplete="username"
                   type="email"
                   required
                   value={email}
@@ -146,10 +148,12 @@ export default function TenantLoginPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                <label htmlFor="work-password" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
                   Password
                 </label>
                 <input
+                  id="work-password"
+                  autoComplete="current-password"
                   type="password"
                   required
                   value={password}

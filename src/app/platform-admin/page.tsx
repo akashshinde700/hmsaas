@@ -649,8 +649,9 @@ export default function PlatformAdminPage() {
           <form onSubmit={handleLogin} className="mt-6 space-y-4">
             {needsBootstrap && (
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Admin Name</label>
+                <label htmlFor="platform-name" className="block text-xs font-semibold text-slate-700 mb-1">Admin Name</label>
                 <input
+                  id="platform-name"
                   required
                   value={loginName}
                   onChange={(e) => setLoginName(e.target.value)}
@@ -659,8 +660,10 @@ export default function PlatformAdminPage() {
               </div>
             )}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Platform Email</label>
+              <label htmlFor="platform-email" className="block text-xs font-semibold text-slate-700 mb-1">Platform Email</label>
               <input
+                id="platform-email"
+                autoComplete="username"
                 type="email"
                 required
                 value={loginEmail}
@@ -669,8 +672,10 @@ export default function PlatformAdminPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
+              <label htmlFor="platform-password" className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
               <input
+                id="platform-password"
+                autoComplete="current-password"
                 type="password"
                 required
                 value={loginPassword}

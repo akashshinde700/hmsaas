@@ -34,3 +34,6 @@ medwiki/venv/
 medwiki/*.lock
 medwiki/scraper_checkpoint.json
 medwiki/*.sql
+
+# Local browser and rendering tools
+.cache/

@@ -49,6 +49,10 @@ export function BentoDashboardCard({
 
   return (
     <motion.div
+      onClick={onClick || (href ? () => { window.location.href = href } : undefined)}
+      role={isLink ? "button" : undefined}
+      tabIndex={isLink ? 0 : undefined}
+      onKeyDown={isLink ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (onClick) onClick(); else if (href) window.location.href = href } } : undefined}
       whileHover={{ y: -4, scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       className={`rounded-2xl border ${cls.border} bg-white p-5 shadow-2xs transition-all duration-200 ${
@@ -73,7 +77,7 @@ export function BentoDashboardCard({
           </span>
         )}
       </div>
-      <p className="mt-1 text-[11px] font-medium {cls.text}">{sub}</p>
+      <p className={`mt-1 text-[11px] font-medium ${cls.text}`}>{sub}</p>
       {trend && (
         <p className="mt-2 text-[10px] text-slate-400">
           {trend.label} <span className="font-medium">{trend.positive ? '+' : '-'}{trend.value}%</span>
