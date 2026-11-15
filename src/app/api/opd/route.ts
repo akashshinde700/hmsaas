@@ -61,6 +61,34 @@ export async function POST(req: NextRequest) {
     return apiJson({ ok: true }, { startMs })
   }
 
+  if (action === 'checkIn') {
+    const patientId = String(body.patientId || '')
+    const patient = await db.patient.findFirst({
+      where: { id: patientId, organizationId: session.organizationId },
+    })
+    if (!patient) {
+      return apiJson({ error: 'Patient not found in this hospital.' }, { status: 404, startMs })
+    }
+    const existingCount = await db.opdQueue.count({
+      where: { organizationId: session.organizationId, queueDate: body.queueDate || new Date().toISOString().slice(0, 10) },
+    })
+    const item = await db.opdQueue.create({
+      data: {
+        organizationId: session.organizationId,
+        patientId,
+        doctorId: body.doctorId || session.userId,
+        tokenNumber: existingCount + 1,
+        queueDate: body.queueDate || new Date().toISOString().slice(0, 10),
+        priority: String(body.priority || 'normal'),
+        visitType: String(body.visitType || 'New Visit'),
+        chiefComplaint: body.chiefComplaint || body.visitReason || null,
+        status: 'waiting',
+      },
+    })
+    invalidateCachePrefix(`dash:${session.organizationId}`)
+    return apiJson({ item, tokenNumber: item.tokenNumber }, { status: 201, startMs })
+  }
+
   if (action === 'bulkUpdateStatus' && Array.isArray(body.ids)) {
     const status = String(body.status || 'completed')
     await dbUnscoped.opdQueue.updateMany({
