@@ -163,6 +163,129 @@ export function useAutosaveDraft<T>(
 }
 
 // ============================================================================
+// #21 RECENT ITEMS — Quick access to recently viewed patients, prescriptions, admissions
+// Reduces navigation: user can jump straight back to last worked record
+// ============================================================================
+export type RecentItemType = 'patient' | 'prescription' | 'ipd_admission' | 'invoice' | 'module'
+
+export interface RecentItem {
+  id: string
+  type: RecentItemType
+  label: string
+  sub: string
+  module: HmsModuleId
+  routeParam?: string
+  updatedAt: string
+}
+
+export type HmsModuleId =
+  | 'overview'
+  | 'opd'
+  | 'rx'
+  | 'ipd'
+  | 'patients'
+  | 'medicines'
+  | 'billing'
+  | 'referrals'
+  | 'settings'
+
+export function useRecentItems(maxItems = 8) {
+  const [recent, setRecent] = useState<RecentItem[]>([])
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('hms_recent_items_v2')
+      if (raw) setRecent(JSON.parse(raw))
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const addRecent = useCallback(
+    (item: Omit<RecentItem, 'updatedAt'>) => {
+      setRecent((prev) => {
+        const next = [
+          { ...item, updatedAt: new Date().toISOString() },
+          ...prev.filter((r) => r.id !== item.id),
+        ].slice(0, maxItems)
+        try {
+          window.localStorage.setItem('hms_recent_items_v2', JSON.stringify(next))
+        } catch {
+          // ignore
+        }
+        return next
+      })
+    },
+    [maxItems],
+  )
+
+  const clearRecent = useCallback(() => {
+    setRecent([])
+    try {
+      window.localStorage.removeItem('hms_recent_items_v2')
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  return { recent, addRecent, clearRecent }
+}
+
+// ============================================================================
+// #22 FOCUS MODE — Compact single-doctor workflow UI
+// Hides non-essential chrome, enlarges primary actions, reduces navigation
+// ============================================================================
+export function useFocusMode() {
+  const [focused, setFocused] = usePersistentState<boolean>('hms_focus_mode_v2', false)
+
+  const toggleFocus = useCallback(() => setFocused((v) => !v), [setFocused])
+
+  return { focused, setFocused, toggleFocus }
+}
+
+// ============================================================================
+// #23 ENHANCED KEYBOARD SHORTCUTS — Context-aware shortcuts registry
+// ============================================================================
+export interface ShortcutDef {
+  key: string
+  modifier?: 'ctrl' | 'meta' | 'alt' | 'shift'
+  description: string
+  category: string
+  run: () => void
+  inInput?: boolean // allow shortcut while typing in input
+}
+
+export function useEnhancedShortcuts(shortcuts: ShortcutDef[]) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase()
+      const inInput =
+        tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'datalist'
+
+      for (const s of shortcuts) {
+        if (!s.inInput && inInput) continue
+
+        const modMatch =
+          !s.modifier ||
+          (s.modifier === 'ctrl' && e.ctrlKey) ||
+          (s.modifier === 'meta' && e.metaKey) ||
+          (s.modifier === 'alt' && e.altKey) ||
+          (s.modifier === 'shift' && e.shiftKey)
+
+        if (modMatch && e.key.toLowerCase() === s.key.toLowerCase()) {
+          e.preventDefault()
+          s.run()
+          return
+        }
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [shortcuts])
+}
+
+// ============================================================================
 // #20 ONLINE / OFFLINE CONNECTION MONITOR
 // ============================================================================
 export function useNetworkRecovery() {

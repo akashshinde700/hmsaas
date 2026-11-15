@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { motion } from 'motion/react'
+import { motion, AnimatePresence } from 'motion/react'
 import {
   Activity,
   ArrowUpRight,
@@ -27,18 +27,30 @@ import {
   Users,
   X,
   Zap,
+  Clock,
+  History,
 } from 'lucide-react'
 import { PwaInstallButton } from '@/components/pwa/PwaInstall'
-import { useNetworkRecovery, usePersistentState } from '@/hooks/useSaaSUX'
+import { useNetworkRecovery, usePersistentState, useRecentItems, useFocusMode, useEnhancedShortcuts } from '@/hooks/useSaaSUX'
 import {
   ErrorRecoveryBanner,
   KeyboardShortcutsModal,
   NetworkRecoveryBanner,
   PlanQuotaCard,
-  SkeletonKpiGrid,
   TierBadge,
   type PlanUsageSummary,
+  BentoDashboardGrid,
+  BentoDashboardCard,
+  BreadcrumbNav,
+  QuickActionFloating,
+  QuickActionFab,
+  EnhancedFilterBar,
 } from '@/components/saas-ux/SaaSUXPrimitives'
+import {
+  ModuleAccessGate,
+  useSidebarModules,
+} from '@/components/saas-ux/ModuleAccessGate'
+import { ROLE_INFO, type UserContext } from '@/lib/role-access'
 import SmartRxPadTab from '@/components/hms/SmartRxPadTab'
 import IpdModuleTab from '@/components/hms/IpdModuleTab'
 import { OpdQueueTab, PatientsDirectoryTab } from '@/components/hms/OpdAndPatientsTabs'
@@ -73,6 +85,7 @@ const NAV_ITEMS: Array<{
   shortcut: string
   icon: typeof LayoutDashboard
   badge?: string
+  href?: string
 }> = [
   { id: 'overview', label: 'Command Overview', shortLabel: 'Overview', shortcut: 'Alt+1', icon: LayoutDashboard },
   { id: 'opd', label: 'OPD Queue & Vitals', shortLabel: 'OPD', shortcut: 'Alt+2', icon: Activity },
@@ -85,6 +98,18 @@ const NAV_ITEMS: Array<{
   { id: 'settings', label: 'Hospital Settings', shortLabel: 'Settings', shortcut: 'Alt+9', icon: Settings },
 ]
 
+const MODULE_LABELS: Record<NavKey, string> = {
+  overview: 'Command Overview',
+  opd: 'OPD Queue & Vitals',
+  rx: 'Smart Rx Pad',
+  ipd: 'IPD & Bed Board',
+  patients: 'Patient Directory (UHID)',
+  medicines: 'Medicine Formulary',
+  billing: 'Lab & Billing',
+  referrals: 'Refer & Earn',
+  settings: 'Hospital Settings',
+}
+
 export default function HospitalDashboardPage() {
   const router = useRouter()
 
@@ -95,12 +120,16 @@ export default function HospitalDashboardPage() {
     false
   )
 
+  // #22 Focus Mode — compact single-doctor workflow
+  const { focused, setFocused, toggleFocus } = useFocusMode()
+
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [cmdQuery, setCmdQuery] = useState('')
   const [cmdActiveIndex, setCmdActiveIndex] = useState(0)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [upgradeNudge, setUpgradeNudge] = useState<{ module: string; feature?: string } | null>(null)
 
   const [initialLoading, setInitialLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
@@ -114,6 +143,9 @@ export default function HospitalDashboardPage() {
 
   // #20 Online / Offline Recovery State
   const { isOnline, justRecovered, dismissRecovery } = useNetworkRecovery()
+
+  // #21 Recent Items
+  const { recent, addRecent } = useRecentItems()
 
   // Cross-module handoff states
   const [rxPatientId, setRxPatientId] = useState<string | null>(null)
@@ -170,7 +202,80 @@ export default function HospitalDashboardPage() {
     refreshCore()
   }, [refreshCore])
 
-  // #13 Global Keyboard Shortcuts (⌘K, ?, [, Alt+1..9, Esc)
+  interface TenantSession {
+    userId: string
+    organizationId: string
+    role: string
+    name: string
+    email: string
+    impersonatedBy?: string
+    organization?: {
+      name: string
+      slug: string
+      type?: string
+      status?: string
+      subscription?: {
+        status: string
+        plan?: {
+          name: string
+          tier: string
+          featuresJson?: string
+        }
+      }
+    }
+  }
+
+  // Parse user role & plan for access control
+  const user = useMemo(() => {
+    if (!sessionInfo) return null
+    const s = sessionInfo as unknown as TenantSession
+    return {
+      userId: s.userId,
+      organizationId: s.organizationId,
+      role: s.role as any,
+      name: s.name,
+      email: s.email,
+    } as UserContext
+  }, [sessionInfo])
+
+  const planFeaturesJson = useMemo(() => {
+    const org = (sessionInfo as unknown as TenantSession | null)?.organization
+    return org?.subscription?.plan?.featuresJson || null
+  }, [sessionInfo])
+
+  const orgType = useMemo(() => {
+    const org = (sessionInfo as unknown as TenantSession | null)?.organization
+    return org?.type || null
+  }, [sessionInfo])
+
+  // Accessible modules based on role + plan
+  const accessibleModules = useSidebarModules(user, planFeaturesJson, orgType)
+
+  // Filter NAV_ITEMS by access control
+  const visibleNavItems = useMemo(() => {
+    if (!user) return []
+    const accessibleIds = new Set(accessibleModules.map((m) => m.id))
+    return NAV_ITEMS.filter((n) => accessibleIds.has(n.id))
+  }, [user, accessibleModules])
+
+  // Auto-reset activeNav if current tab is no longer accessible
+  useEffect(() => {
+    if (user && !visibleNavItems.some((n) => n.id === activeNav)) {
+      setActiveNav(visibleNavItems[0]?.id || 'overview')
+    }
+  }, [user, visibleNavItems, activeNav, setActiveNav])
+
+  // #13 Global Keyboard Shortcuts (⌘K, ?, [, Alt+1..9, Esc, + Focus Mode F)
+  useEnhancedShortcuts([
+    { key: 'k', modifier: 'meta', description: 'Open Command Palette', category: 'Navigation', run: () => { setCmdOpen(true); setCmdActiveIndex(0) }, inInput: false },
+    { key: 'k', modifier: 'ctrl', description: 'Open Command Palette', category: 'Navigation', run: () => { setCmdOpen(true); setCmdActiveIndex(0) }, inInput: false },
+    { key: '?', description: 'Keyboard Shortcuts Help', category: 'Navigation', run: () => setShortcutsOpen((v) => !v), inInput: false },
+    { key: '[', description: 'Collapse / Expand Sidebar', category: 'Navigation', run: () => setSidebarCollapsed((v) => !v), inInput: false },
+    { key: 'f', modifier: 'meta', description: 'Toggle Focus Mode', category: 'UI', run: toggleFocus, inInput: false },
+    { key: 'f', modifier: 'ctrl', description: 'Toggle Focus Mode', category: 'UI', run: toggleFocus, inInput: false },
+    { key: 'r', modifier: 'alt', description: 'Refresh Dashboard Data', category: 'Actions', run: refreshCore, inInput: false },
+  ])
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase()
@@ -193,7 +298,7 @@ export default function HospitalDashboardPage() {
       if (e.altKey && e.key >= '1' && e.key <= '9') {
         e.preventDefault()
         const idx = Number(e.key) - 1
-        if (NAV_ITEMS[idx]) setActiveNav(NAV_ITEMS[idx].id)
+        if (visibleNavItems[idx]) setActiveNav(visibleNavItems[idx].id)
         return
       }
 
@@ -205,11 +310,14 @@ export default function HospitalDashboardPage() {
       } else if (e.key === '[') {
         e.preventDefault()
         setSidebarCollapsed((v) => !v)
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        toggleFocus()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setActiveNav, setSidebarCollapsed])
+  }, [setActiveNav, setSidebarCollapsed, toggleFocus, visibleNavItems])
 
   // #3 Spotlight Command Palette Unified Items
   const commandResults = useMemo(() => {
@@ -217,41 +325,18 @@ export default function HospitalDashboardPage() {
     const items: Array<{ id: string; category: string; label: string; sub?: string; run: () => void }> = []
 
     const quickActions = [
-      {
-        id: 'act-rx',
-        category: 'Quick Action',
-        label: 'Write 30-Second Smart Prescription',
-        sub: 'Alt+3',
-        run: () => setActiveNav('rx'),
-      },
-      {
-        id: 'act-ipd',
-        category: 'Quick Action',
-        label: 'Open Live IPD Ward & Bed Board',
-        sub: 'Alt+4',
-        run: () => setActiveNav('ipd'),
-      },
-      {
-        id: 'act-wiz',
-        category: 'Quick Action',
-        label: 'Launch Guided Hospital Onboarding Wizard',
-        sub: 'Setup',
-        run: () => setWizardOpen(true),
-      },
-      {
-        id: 'act-ref',
-        category: 'Quick Action',
-        label: 'Refer a Hospital & Earn 20% Commission',
-        sub: 'Alt+8',
-        run: () => setActiveNav('referrals'),
-      },
+      { id: 'act-rx', category: 'Quick Action', label: 'Write 30-Second Smart Prescription', sub: 'Alt+3', run: () => setActiveNav('rx') },
+      { id: 'act-ipd', category: 'Quick Action', label: 'Open Live IPD Ward & Bed Board', sub: 'Alt+4', run: () => setActiveNav('ipd') },
+      { id: 'act-wiz', category: 'Quick Action', label: 'Launch Guided Hospital Onboarding Wizard', sub: 'Setup', run: () => setWizardOpen(true) },
+      { id: 'act-ref', category: 'Quick Action', label: 'Refer a Hospital & Earn 20% Commission', sub: 'Alt+8', run: () => setActiveNav('referrals') },
+      { id: 'act-focus', category: 'UI', label: 'Toggle Focus Mode (Single Doctor)', sub: '⌘/Ctrl+F', run: toggleFocus },
     ]
 
     for (const a of quickActions) {
       if (!q || a.label.toLowerCase().includes(q)) items.push(a)
     }
 
-    for (const n of NAV_ITEMS) {
+    for (const n of visibleNavItems) {
       if (!q || n.label.toLowerCase().includes(q)) {
         items.push({
           id: `nav-${n.id}`,
@@ -278,8 +363,24 @@ export default function HospitalDashboardPage() {
       }
     }
 
+    // Recent items in command palette
+    for (const r of recent.slice(0, 5)) {
+      if (!q || r.label.toLowerCase().includes(q)) {
+        items.push({
+          id: `recent-${r.id}`,
+          category: 'Recent',
+          label: r.label,
+          sub: r.sub,
+            run: () => {
+              if (r.module === 'rx') setRxPatientId(r.routeParam ?? null)
+              setActiveNav(r.module)
+            },
+        })
+      }
+    }
+
     return items.slice(0, 14)
-  }, [cmdQuery, patients, setActiveNav])
+  }, [cmdQuery, patients, visibleNavItems, recent, setActiveNav, toggleFocus])
 
   async function handleLogout() {
     await fetch('/api/auth', {
@@ -290,43 +391,43 @@ export default function HospitalDashboardPage() {
     router.push('/login')
   }
 
+  const roleInfo = user ? (ROLE_INFO as Record<string, { label: string; color: string; description: string }>)[user.role] : null
+
+  const typedSession = sessionInfo as unknown as TenantSession | null
+
   if (initialLoading && !sessionInfo) {
     return (
       <div className="min-h-screen bg-slate-100 p-6 max-w-7xl mx-auto space-y-6">
         <div className="h-12 w-64 rounded-2xl bg-slate-200 animate-pulse" />
-        <SkeletonKpiGrid count={4} />
-        <SkeletonKpiGrid count={3} />
+        <BentoDashboardGrid cards={[
+          { title: 'OPD Today', value: '—', sub: 'Loading...', icon: Activity, color: 'teal' },
+          { title: 'IPD Beds', value: '—', sub: 'Loading...', icon: BedDouble, color: 'sky' },
+          { title: 'Revenue', value: '—', sub: 'Loading...', icon: CreditCard, color: 'emerald' },
+          { title: 'Drug Catalog', value: '—', sub: 'Loading...', icon: Database, color: 'violet' },
+        ]} />
       </div>
     )
   }
 
   if (!sessionInfo) return null
 
-  const user = sessionInfo.user as {
-    name: string
-    email: string
-    role: string
-    impersonatedBy?: string
-  }
-  const org = sessionInfo.organization as {
-    name: string
-    subscription?: { status: string; plan?: { name: string; tier?: string } }
-  }
   const kpis = (dashData?.kpis as Record<string, number>) || {}
   const activeAdmissions =
     (dashData?.activeAdmissions as Array<Record<string, unknown>>) || []
   const opdQueue = (dashData?.opdQueue as Array<Record<string, unknown>>) || []
 
+  const currentModule = visibleNavItems.find((n) => n.id === activeNav)
+
   return (
-    <div className="min-h-screen bg-slate-100/80 flex flex-col">
+    <div className={`min-h-screen bg-slate-100/80 flex flex-col ${focused ? 'px-2' : ''}`}>
       {/* Platform Admin Impersonation Banner */}
-      {user.impersonatedBy && (
+      {typedSession?.impersonatedBy && (
         <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-bold flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <ShieldAlert className="h-4 w-4" />
             <span>
-              Platform Admin Impersonation ({user.impersonatedBy}) → Viewing{' '}
-              <strong>{org?.name}</strong> as {user.email}
+              Platform Admin Impersonation ({typedSession.impersonatedBy}) → Viewing{' '}
+              <strong>{typedSession.organization?.name}</strong> as {typedSession.email}
             </span>
           </div>
           <Link
@@ -341,9 +442,9 @@ export default function HospitalDashboardPage() {
       <div className="flex flex-1">
         {/* #4 Persistent Collapsible Desktop Left Sidebar */}
         <aside
-          className={`hidden lg:flex shrink-0 flex-col justify-between border-r border-slate-200 bg-slate-950 text-slate-200 p-3.5 transition-all duration-200 ${
+          className={`hidden lg:flex shrink-0 flex-col justify-between border-r border-slate-200 bg-slate-950 text-slate-200 p-3.5 transition-all duration-300 ${
             sidebarCollapsed ? 'w-20' : 'w-64'
-          }`}
+          } ${focused ? 'w-16' : ''}`}
         >
           <div>
             <div className="flex items-center justify-between gap-2 px-1.5 py-2 border-b border-slate-800 pb-4">
@@ -351,13 +452,13 @@ export default function HospitalDashboardPage() {
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500 text-white shrink-0">
                   <HeartPulse className="h-5 w-5" />
                 </div>
-                {!sidebarCollapsed && (
+                {!sidebarCollapsed && !focused && (
                   <div className="min-w-0">
                     <p className="truncate text-sm font-extrabold text-white">
-                      {settings?.clinicDisplayName || org?.name}
+                      {settings?.clinicDisplayName || typedSession?.organization?.name}
                     </p>
                     <p className="text-[11px] text-teal-400 font-medium truncate">
-                      {org?.subscription?.plan?.name || 'Advance Hospital'}
+                      {typedSession?.organization?.subscription?.plan?.name || 'Advance Hospital'}
                     </p>
                   </div>
                 )}
@@ -377,7 +478,7 @@ export default function HospitalDashboardPage() {
             </div>
 
             <nav className="mt-4 space-y-1">
-              {NAV_ITEMS.map((item) => {
+              {visibleNavItems.map((item) => {
                 const Icon = item.icon
                 const active = activeNav === item.id
                 return (
@@ -385,7 +486,16 @@ export default function HospitalDashboardPage() {
                     key={item.id}
                     type="button"
                     title={`${item.label} (${item.shortcut})`}
-                    onClick={() => setActiveNav(item.id)}
+                    onClick={() => {
+                      setActiveNav(item.id)
+                      addRecent({
+                        id: item.id,
+                        type: 'module',
+                        label: item.label,
+                        sub: item.shortcut,
+                        module: item.id,
+                      })
+                    }}
                     className={`w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
                       active
                         ? 'bg-teal-600 text-white shadow-sm'
@@ -394,9 +504,9 @@ export default function HospitalDashboardPage() {
                   >
                     <span className="flex items-center gap-2.5">
                       <Icon className="h-4 w-4 shrink-0" />
-                      {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                      {!sidebarCollapsed && !focused && <span className="truncate">{item.label}</span>}
                     </span>
-                    {!sidebarCollapsed && item.badge && (
+                    {!sidebarCollapsed && !focused && item.badge && (
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                           active ? 'bg-white/20 text-white' : 'bg-slate-800 text-teal-300'
@@ -408,16 +518,41 @@ export default function HospitalDashboardPage() {
                   </button>
                 )
               })}
+              {visibleNavItems.length < NAV_ITEMS.length && (
+                <div className="mx-2 mt-3 rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-2 text-[10px] text-slate-400 text-center">
+                  Some modules hidden by your plan / role
+                </div>
+              )}
             </nav>
           </div>
 
           <div className="border-t border-slate-800 pt-3 space-y-2 text-xs">
-            {!sidebarCollapsed && (
+            {!sidebarCollapsed && !focused && (
               <div className="px-2">
-                <p className="font-bold text-white truncate">{user.name}</p>
-                <p className="text-[11px] text-slate-400 truncate">{user.role}</p>
+                <p className="font-bold text-white truncate">{user?.name}</p>
+                {roleInfo && (
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-400 border border-slate-700/50">
+                      {user?.role}
+                    </span>
+                    <p className="text-[11px] text-slate-400 truncate">{roleInfo.label}</p>
+                  </div>
+                )}
               </div>
             )}
+            <button
+              type="button"
+              onClick={toggleFocus}
+              title={focused ? 'Exit Focus Mode' : 'Focus Mode (hide chrome)'}
+              className={`w-full flex items-center justify-center lg:justify-start gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                focused
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+              }`}
+            >
+              {focused ? <Clock className="h-4 w-4" /> : <History className="h-4 w-4" />}
+              {!sidebarCollapsed && !focused && <span>{focused ? 'Exit Focus' : 'Focus Mode'}</span>}
+            </button>
             <button
               type="button"
               onClick={handleLogout}
@@ -425,13 +560,13 @@ export default function HospitalDashboardPage() {
               className="w-full flex items-center justify-center lg:justify-start gap-2 rounded-xl px-3 py-2 text-slate-400 hover:bg-slate-900 hover:text-rose-400 transition"
             >
               <LogOut className="h-4 w-4 shrink-0" />
-              {!sidebarCollapsed && <span>Sign Out</span>}
+              {!sidebarCollapsed && !focused && <span>Sign Out</span>}
             </button>
           </div>
         </aside>
 
         {/* Main Workspace Area */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className={`flex-1 flex flex-col min-w-0 ${focused ? 'px-4' : ''}`}>
           {/* Top Utility Header */}
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-md px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -444,33 +579,49 @@ export default function HospitalDashboardPage() {
               </button>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
+                  <BreadcrumbNav
+                    items={[
+                      { label: MODULE_LABELS[activeNav as NavKey] || activeNav },
+                    ]}
+                  />
                   <h1 className="text-base font-extrabold text-slate-900 truncate">
-                    {NAV_ITEMS.find((n) => n.id === activeNav)?.label}
+                    {currentModule?.label || NAV_ITEMS.find((n) => n.id === activeNav)?.label}
                   </h1>
-                  {/* #14 Tier-Based UI Indicator */}
                   <div className="hidden sm:block">
                     <TierBadge
-                      tier={planUsage?.tier || org?.subscription?.plan?.tier}
-                      planName={planUsage?.planName || org?.subscription?.plan?.name}
-                      status={planUsage?.status || org?.subscription?.status}
+                      tier={
+                        planUsage?.tier ||
+                        typedSession?.organization?.subscription?.plan?.tier
+                      }
+                      planName={
+                        planUsage?.planName ||
+                        typedSession?.organization?.subscription?.plan?.name
+                      }
+                      status={
+                        planUsage?.status ||
+                        typedSession?.organization?.subscription?.status
+                      }
                     />
                   </div>
                 </div>
                 <p className="text-[11px] text-slate-500 hidden sm:block">
                   Tenant Isolated · UHID Prefix:{' '}
                   <span className="font-mono font-semibold">{settings?.uhidPrefix || 'HMS'}</span>
+                  {roleInfo && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                      {roleInfo.label}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Ultra-fast API Latency Badge */}
               <div className="hidden xl:inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-800">
                 <Zap className="h-3 w-3 text-emerald-600" />
                 <span>API {lastLatencyMs.toFixed(1)}ms</span>
               </div>
 
-              {/* #3 Spotlight Command Palette Trigger */}
               <button
                 type="button"
                 onClick={() => {
@@ -486,7 +637,6 @@ export default function HospitalDashboardPage() {
                 </kbd>
               </button>
 
-              {/* #13 Keyboard Shortcuts Help Trigger */}
               <button
                 type="button"
                 title="Keyboard Shortcuts (?)"
@@ -501,14 +651,19 @@ export default function HospitalDashboardPage() {
             </div>
           </header>
 
-          {/* Dynamic Tab Content (pb-24 on mobile for sticky bottom nav!) */}
-          <main className="flex-1 p-4 sm:p-6 pb-24 lg:pb-8 max-w-7xl w-full mx-auto space-y-5">
+          {/* Dynamic Tab Content */}
+          <main className={`flex-1 p-4 sm:p-6 pb-24 lg:pb-8 max-w-7xl w-full mx-auto space-y-5 ${focused ? 'p-2 sm:p-4' : ''}`}>
             {/* #20 Graceful Error Recovery Banner */}
             <ErrorRecoveryBanner error={fetchError} onRetry={refreshCore} />
 
             {/* #15 Guided Onboarding Data Capture Banner when not yet completed */}
             {settings && !settings.onboardingCompleted && activeNav === 'overview' && (
-              <div className="rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50 via-white to-emerald-50 p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50 via-white to-emerald-50 p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs"
+              >
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600 text-white shrink-0">
                     <Sparkles className="h-5 w-5" />
@@ -529,339 +684,473 @@ export default function HospitalDashboardPage() {
                 >
                   Start Guided Setup →
                 </button>
-              </div>
+              </motion.div>
             )}
 
-            <motion.div
-              key={activeNav}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.18 }}
-            >
-              {/* ==================== OVERVIEW TAB ==================== */}
-              {activeNav === 'overview' && (
-                <div className="space-y-6">
-                  {/* KPI Cards */}
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div
-                      onClick={() => setActiveNav('opd')}
-                      className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs hover:border-teal-400 transition"
-                    >
-                      <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span className="font-semibold">OPD Queue Today</span>
-                        <Activity className="h-4 w-4 text-teal-600" />
-                      </div>
-                      <p className="mt-2 text-3xl font-extrabold text-slate-900">
-                        {kpis.opdTotalToday ?? 0}
-                      </p>
-                      <p className="mt-1 text-xs text-teal-700 font-medium">
-                        {kpis.opdWaiting ?? 0} waiting · {kpis.opdCompleted ?? 0} completed
-                      </p>
-                    </div>
-
-                    <div
-                      onClick={() => setActiveNav('ipd')}
-                      className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs hover:border-sky-400 transition"
-                    >
-                      <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span className="font-semibold">IPD Ward Occupancy</span>
-                        <BedDouble className="h-4 w-4 text-sky-600" />
-                      </div>
-                      <p className="mt-2 text-3xl font-extrabold text-slate-900">
-                        {kpis.occupiedBeds ?? 0}{' '}
-                        <span className="text-lg font-semibold text-slate-400">
-                          / {kpis.totalBeds ?? 0} Beds
-                        </span>
-                      </p>
-                      <p className="mt-1 text-xs text-emerald-700 font-medium">
-                        {kpis.availableBeds ?? 0} free beds ready ({kpis.occupancyRate ?? 0}% full)
-                      </p>
-                    </div>
-
-                    <div
-                      onClick={() => setActiveNav('billing')}
-                      className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs hover:border-emerald-400 transition"
-                    >
-                      <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span className="font-semibold">Collected Revenue</span>
-                        <CreditCard className="h-4 w-4 text-emerald-600" />
-                      </div>
-                      <p className="mt-2 text-3xl font-extrabold text-slate-900">
-                        ₹{(kpis.collectedRevenue ?? 0).toLocaleString('en-IN')}
-                      </p>
-                      <p className="mt-1 text-xs text-amber-700 font-medium">
-                        + ₹{(kpis.runningIpdUnbilled ?? 0).toLocaleString('en-IN')} active IPD unbilled
-                      </p>
-                    </div>
-
-                    <div
-                      onClick={() => setActiveNav('medicines')}
-                      className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs hover:border-violet-400 transition"
-                    >
-                      <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span className="font-semibold">MedWiki Drug Catalog</span>
-                        <Database className="h-4 w-4 text-violet-600" />
-                      </div>
-                      <p className="mt-2 text-3xl font-extrabold text-slate-900">
-                        {kpis.medicineCatalogCount ?? 0}
-                      </p>
-                      <p className="mt-1 text-xs text-violet-700 font-medium">
-                        Global MedWiki + Custom Formulary
-                      </p>
-                    </div>
+            {/* Plan Upgrade Nudge */}
+            {upgradeNudge && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                transition={{ duration: 0.2 }}
+                className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-600 text-white shrink-0">
+                    <ShieldAlert className="h-5 w-5" />
                   </div>
-
-                  {/* #14 Tier-Based Subscription Quotas */}
-                  <PlanQuotaCard
-                    usage={planUsage}
-                    onOpenSettings={() => setActiveNav('settings')}
-                  />
-
-                  {/* Quick Clinical Launchpad */}
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <button
-                      type="button"
-                      onClick={() => setActiveNav('rx')}
-                      className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 p-5 text-left text-white shadow-md hover:opacity-95 transition"
-                    >
-                      <div>
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase text-teal-100">
-                          <Sparkles className="h-3.5 w-3.5" /> 30-Second Consultation
-                        </span>
-                        <h3 className="mt-1 text-base font-extrabold">Open Smart OPD Rx Pad</h3>
-                      </div>
-                      <ArrowUpRight className="h-5 w-5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setActiveNav('ipd')}
-                      className="flex items-center justify-between rounded-2xl bg-slate-900 p-5 text-left text-white shadow-md hover:bg-slate-800 transition"
-                    >
-                      <div>
-                        <span className="text-[11px] font-bold uppercase text-sky-300">
-                          ICTHospital IPD Engine
-                        </span>
-                        <h3 className="mt-1 text-base font-extrabold">
-                          Live Ward Bed Board &amp; Admit
-                        </h3>
-                      </div>
-                      <ArrowUpRight className="h-5 w-5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setActiveNav('referrals')}
-                      className="flex items-center justify-between rounded-2xl border border-teal-200 bg-white p-5 text-left text-slate-900 shadow-2xs hover:border-teal-500 transition"
-                    >
-                      <div>
-                        <span className="text-[11px] font-bold uppercase text-teal-600">
-                          Partner Rewards · 20% Share
-                        </span>
-                        <h3 className="mt-1 text-base font-extrabold">
-                          Refer a Peer Hospital &amp; Earn
-                        </h3>
-                      </div>
-                      <ArrowUpRight className="h-5 w-5 text-teal-600" />
-                    </button>
+                  <div className="text-xs">
+                    <p className="font-bold text-amber-900">{upgradeNudge.module} requires plan upgrade</p>
+                    <p className="text-amber-800">
+                      Your current plan does not include {upgradeNudge.feature || 'this module'}. Contact Platform Admin to enable it.
+                    </p>
                   </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUpgradeNudge(null)}
+                  className="text-amber-500 hover:text-amber-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </motion.div>
+            )}
 
-                  {/* Two-Column Live OPD Queue + Active IPD Patients */}
-                  <div className="grid gap-6 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-bold text-slate-900">
-                          Today&apos;s OPD Queue ({opdQueue.length})
-                        </h3>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeNav}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18 }}
+                className="space-y-5"
+              >
+                {/* ==================== OVERVIEW TAB (Bento Dashboard) ==================== */}
+                {activeNav === 'overview' && (
+                  <div className="space-y-6">
+                    {/* Bento KPI Grid */}
+                    <BentoDashboardGrid cards={[
+                      {
+                        title: 'OPD Queue Today',
+                        value: kpis.opdTotalToday ?? 0,
+                        sub: `${kpis.opdWaiting ?? 0} waiting · ${kpis.opdCompleted ?? 0} completed`,
+                        icon: Activity,
+                        color: 'teal',
+                        onClick: () => setActiveNav('opd'),
+                      },
+                      {
+                        title: 'IPD Ward Occupancy',
+                        value: `${kpis.occupiedBeds ?? 0} / ${kpis.totalBeds ?? 0}`,
+                        sub: `${kpis.availableBeds ?? 0} free beds ({kpis.occupancyRate ?? 0}% full)`,
+                        icon: BedDouble,
+                        color: 'sky',
+                        onClick: () => setActiveNav('ipd'),
+                      },
+                      {
+                        title: 'Collected Revenue',
+                        value: `₹${(kpis.collectedRevenue ?? 0).toLocaleString('en-IN')}`,
+                        sub: `+ ₹${(kpis.runningIpdUnbilled ?? 0).toLocaleString('en-IN')} active IPD unbilled`,
+                        icon: CreditCard,
+                        color: 'emerald',
+                        onClick: () => setActiveNav('billing'),
+                      },
+                      {
+                        title: 'MedWiki Drug Catalog',
+                        value: kpis.medicineCatalogCount ?? 0,
+                        sub: 'Global MedWiki + Custom Formulary',
+                        icon: Database,
+                        color: 'violet',
+                        onClick: () => setActiveNav('medicines'),
+                      },
+                    ]} />
+
+                    {/* #14 Tier-Based Subscription Quotas */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25, delay: 0.1 }}
+                      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs"
+                    >
+                      <PlanQuotaCard
+                        usage={planUsage}
+                        onOpenSettings={() => setActiveNav('settings')}
+                      />
+                    </motion.div>
+
+                    {/* Quick Clinical Launchpad */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25, delay: 0.15 }}
+                      className="grid gap-4 sm:grid-cols-3"
+                    >
+                      {visibleNavItems.some((n) => n.id === 'rx') && (
                         <button
                           type="button"
-                          onClick={() => setActiveNav('opd')}
-                          className="text-xs font-bold text-teal-700 hover:underline"
+                          onClick={() => setActiveNav('rx')}
+                          className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 p-5 text-left text-white shadow-md hover:opacity-95 transition"
                         >
-                          Manage Queue →
+                          <div>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase text-teal-100">
+                              <Sparkles className="h-3.5 w-3.5" /> 30-Second Consultation
+                            </span>
+                            <h3 className="mt-1 text-base font-extrabold">Open Smart OPD Rx Pad</h3>
+                          </div>
+                          <ArrowUpRight className="h-5 w-5" />
                         </button>
-                      </div>
-                      <div className="space-y-2.5 text-xs">
-                        {opdQueue.slice(0, 5).map((q) => {
-                          const p = q.patient as PatientRecord
-                          return (
-                            <div
-                              key={String(q.id)}
-                              className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 p-3"
-                            >
-                              <div>
-                                <span className="font-mono font-bold text-teal-700">
-                                  Token #{String(q.tokenNumber)}
-                                </span>{' '}
-                                · <strong>{p?.name}</strong> ({p?.uhid})
-                                <p className="text-[11px] text-slate-500 mt-0.5">
-                                  {String(q.chiefComplaint || q.visitReason || 'OPD Consultation')}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setRxPatientId(p.id)
-                                  setRxQueueId(String(q.id))
-                                  setActiveNav('rx')
-                                }}
-                                className="rounded-lg bg-teal-600 px-3 py-1.5 font-bold text-white"
-                              >
-                                Prescribe
-                              </button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-bold text-slate-900">
-                          Active Admitted IPD Patients ({activeAdmissions.length})
-                        </h3>
+                      )}
+                      {visibleNavItems.some((n) => n.id === 'ipd') && (
                         <button
                           type="button"
                           onClick={() => setActiveNav('ipd')}
-                          className="text-xs font-bold text-sky-700 hover:underline"
+                          className="flex items-center justify-between rounded-2xl bg-slate-900 p-5 text-left text-white shadow-md hover:bg-slate-800 transition"
                         >
-                          Open Ward Board →
+                          <div>
+                            <span className="text-[11px] font-bold uppercase text-sky-300">
+                              ICTHospital IPD Engine
+                            </span>
+                            <h3 className="mt-1 text-base font-extrabold">
+                              Live Ward Bed Board & Admit
+                            </h3>
+                          </div>
+                          <ArrowUpRight className="h-5 w-5" />
                         </button>
-                      </div>
-                      <div className="space-y-2.5 text-xs">
-                        {activeAdmissions.map((adm) => {
-                          const p = adm.patient as PatientRecord
-                          const bed = adm.bed as { bedNumber: string; category: { name: string } }
-                          const fin = adm.financials as {
-                            grossTotal: number
-                            depositsPaidTotal: number
-                            netPayable: number
-                          }
-                          return (
-                            <div
-                              key={String(adm.id)}
-                              onClick={() => setActiveNav('ipd')}
-                              className="cursor-pointer rounded-xl border border-rose-100 bg-rose-50/40 p-3 hover:border-rose-300 transition"
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-slate-900">
-                                  {p?.name}{' '}
-                                  <span className="font-mono text-rose-700">
-                                    [{bed?.bedNumber}]
+                      )}
+                      {visibleNavItems.some((n) => n.id === 'referrals') && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveNav('referrals')}
+                          className="flex items-center justify-between rounded-2xl border border-teal-200 bg-white p-5 text-left text-slate-900 shadow-2xs hover:border-teal-500 transition"
+                        >
+                          <div>
+                            <span className="text-[11px] font-bold uppercase text-teal-600">
+                              Partner Rewards · 20% Share
+                            </span>
+                            <h3 className="mt-1 text-base font-extrabold">
+                              Refer a Peer Hospital & Earn
+                            </h3>
+                          </div>
+                          <ArrowUpRight className="h-5 w-5 text-teal-600" />
+                        </button>
+                      )}
+                    </motion.div>
+
+                    {/* Two-Column Live OPD Queue + Active IPD Patients */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25, delay: 0.2 }}
+                      className="grid gap-6 lg:grid-cols-2"
+                    >
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-bold text-slate-900">
+                            Today's OPD Queue ({opdQueue.length})
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => setActiveNav('opd')}
+                            className="text-xs font-bold text-teal-700 hover:underline"
+                          >
+                            Manage Queue →
+                          </button>
+                        </div>
+                        <div className="space-y-2.5 text-xs">
+                          {opdQueue.slice(0, 5).map((q) => {
+                            const p = q.patient as PatientRecord
+                            return (
+                              <div
+                                key={String(q.id)}
+                                className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 p-3"
+                              >
+                                <div>
+                                  <span className="font-mono font-bold text-teal-700">
+                                    Token #{String(q.tokenNumber)}
                                   </span>
-                                </span>
-                                <span className="font-bold text-slate-800">
-                                  Bill: ₹{fin?.grossTotal?.toLocaleString('en-IN')}
-                                </span>
+                                  · <strong>{p?.name}</strong> ({p?.uhid})
+                                  <p className="text-[11px] text-slate-500 mt-0.5">
+                                    {String(q.chiefComplaint || q.visitReason || 'OPD Consultation')}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRxPatientId(p.id)
+                                    setRxQueueId(String(q.id))
+                                    setActiveNav('rx')
+                                  }}
+                                  className="rounded-lg bg-teal-600 px-3 py-1.5 font-bold text-white"
+                                >
+                                  Prescribe
+                                </button>
                               </div>
-                              <p className="mt-0.5 text-slate-600">
-                                {String(adm.provisionalDiagnosis)} · Paid Deposit: ₹
-                                {fin?.depositsPaidTotal?.toLocaleString('en-IN')}
-                              </p>
-                            </div>
-                          )
-                        })}
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-bold text-slate-900">
+                            Active Admitted IPD Patients ({activeAdmissions.length})
+                          </h3>
+                          {visibleNavItems.some((n) => n.id === 'ipd') && (
+                            <button
+                              type="button"
+                              onClick={() => setActiveNav('ipd')}
+                              className="text-xs font-bold text-sky-700 hover:underline"
+                            >
+                              Open Ward Board →
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-2.5 text-xs">
+                          {activeAdmissions.map((adm) => {
+                            const p = adm.patient as PatientRecord
+                            const bed = adm.bed as { bedNumber: string; category: { name: string } }
+                            const fin = adm.financials as {
+                              grossTotal: number
+                              depositsPaidTotal: number
+                              netPayable: number
+                            }
+                            return (
+                              <div
+                                key={String(adm.id)}
+                                onClick={() => setActiveNav('ipd')}
+                                className="cursor-pointer rounded-xl border border-rose-100 bg-rose-50/40 p-3 hover:border-rose-300 transition"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-slate-900">
+                                    {p?.name}
+                                    <span className="font-mono text-rose-700">[{bed?.bedNumber}]</span>
+                                  </span>
+                                  <span className="font-bold text-slate-800">
+                                    Bill: ₹{fin?.grossTotal?.toLocaleString('en-IN')}
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 text-slate-600">
+                                  {String(adm.provisionalDiagnosis)} · Paid Deposit: ₹
+                                  {fin?.depositsPaidTotal?.toLocaleString('en-IN')}
+                                </p>
+                              </div>
+                            )
+                          })}
+                          {activeAdmissions.length === 0 && (
+                            <p className="text-xs text-slate-400 text-center py-4">
+                              No active IPD admissions
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+
+                    {/* Recent Items Quick Access */}
+                    {recent.length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.25, delay: 0.25 }}
+                        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            <Clock className="h-3.5 w-3.5 text-teal-600" />
+                            Recent Items
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // clear recent handled by component
+                            }}
+                            className="text-xs text-slate-400 hover:text-slate-600"
+                          >
+                            Clear all
+                          </button>
+                        </div>
+                        <div className="space-y-2 text-xs">
+                          {recent.map((item) => (
+                            <div
+                              key={item.id}
+                              onClick={() => {
+                                if (item.module === 'rx') setRxPatientId(item.routeParam ?? null)
+                                setActiveNav(item.module)
+                              }}
+                              className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/60 p-2.5 hover:bg-teal-50/50 cursor-pointer transition"
+                            >
+                              <div>
+                                <p className="font-semibold text-slate-900">{item.label}</p>
+                                <p className="text-[10px] text-slate-500">{item.sub}</p>
+                              </div>
+                              <span className="text-slate-400">→</span>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* ==================== OPD QUEUE TAB ==================== */}
-              {activeNav === 'opd' && (
-                <OpdQueueTab
-                  patients={patients}
-                  doctors={doctors}
-                  onWriteRx={(pid, qid) => {
-                    setRxPatientId(pid)
-                    setRxQueueId(qid)
-                    setActiveNav('rx')
-                  }}
-                  onAdmitIpd={(pid, diag) => {
-                    setPendingIpdAdmit({ patientId: pid, diagnosis: diag })
-                    setActiveNav('ipd')
-                  }}
-                  onRefreshGlobal={refreshCore}
-                />
-              )}
+                {/* ==================== OPD QUEUE TAB ==================== */}
+                {activeNav === 'opd' && (
+                  <ModuleAccessGate
+                    moduleId="opd"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    <OpdQueueTab
+                      patients={patients}
+                      doctors={doctors}
+                      onWriteRx={(pid, qid) => {
+                        setRxPatientId(pid)
+                        setRxQueueId(qid)
+                        setActiveNav('rx')
+                        addRecent({ id: pid, type: 'patient', label: patients.find((x) => x.id === pid)?.name || 'Patient', sub: 'OPD Queue', module: 'rx' })
+                      }}
+                      onAdmitIpd={(pid, diag) => {
+                        setPendingIpdAdmit({ patientId: pid, diagnosis: diag })
+                        setActiveNav('ipd')
+                      }}
+                      onRefreshGlobal={refreshCore}
+                    />
+                  </ModuleAccessGate>
+                )}
 
-              {/* ==================== SMART RX PAD TAB ==================== */}
-              {activeNav === 'rx' && (
-                <SmartRxPadTab
-                  patients={patients}
-                  doctors={doctors}
-                  settings={settings}
-                  preselectedPatientId={rxPatientId}
-                  preselectedQueueId={rxQueueId}
-                  onNavigateIpdAdmit={(pid, diag) => {
-                    setPendingIpdAdmit({ patientId: pid, diagnosis: diag })
-                    setActiveNav('ipd')
-                  }}
-                  onLatencySample={(ms) => setLastLatencyMs(ms)}
-                />
-              )}
+                {/* ==================== SMART RX PAD TAB ==================== */}
+                {activeNav === 'rx' && (
+                  <ModuleAccessGate
+                    moduleId="rx"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    <SmartRxPadTab
+                      patients={patients}
+                      doctors={doctors}
+                      settings={settings}
+                      preselectedPatientId={rxPatientId}
+                      preselectedQueueId={rxQueueId}
+                      onNavigateIpdAdmit={(pid, diag) => {
+                        setPendingIpdAdmit({ patientId: pid, diagnosis: diag })
+                        setActiveNav('ipd')
+                      }}
+                      onLatencySample={(ms) => setLastLatencyMs(ms)}
+                    />
+                  </ModuleAccessGate>
+                )}
 
-              {/* ==================== IPD MODULE & BED BOARD TAB ==================== */}
-              {activeNav === 'ipd' && (
-                <IpdModuleTab
-                  patients={patients}
-                  doctors={doctors}
-                  settings={settings}
-                  pendingAdmit={pendingIpdAdmit}
-                  onClearPendingAdmit={() => setPendingIpdAdmit(null)}
-                  onRefreshGlobal={refreshCore}
-                />
-              )}
+                {/* ==================== IPD MODULE & BED BOARD TAB ==================== */}
+                {activeNav === 'ipd' && (
+                  <ModuleAccessGate
+                    moduleId="ipd"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    <IpdModuleTab
+                      patients={patients}
+                      doctors={doctors}
+                      settings={settings}
+                      pendingAdmit={pendingIpdAdmit}
+                      onClearPendingAdmit={() => setPendingIpdAdmit(null)}
+                      onRefreshGlobal={refreshCore}
+                    />
+                  </ModuleAccessGate>
+                )}
 
-              {/* ==================== PATIENTS UHID TAB ==================== */}
-              {activeNav === 'patients' && (
-                <PatientsDirectoryTab
-                  patients={patients}
-                  onRefreshPatients={refreshCore}
-                  onWriteRx={(pid) => {
-                    setRxPatientId(pid)
-                    setActiveNav('rx')
-                  }}
-                  onAdmitIpd={(pid, diag) => {
-                    setPendingIpdAdmit({ patientId: pid, diagnosis: diag })
-                    setActiveNav('ipd')
-                  }}
-                />
-              )}
+                {/* ==================== PATIENTS UHID TAB ==================== */}
+                {activeNav === 'patients' && (
+                  <ModuleAccessGate
+                    moduleId="patients"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    <PatientsDirectoryTab
+                      patients={patients}
+                      onRefreshPatients={refreshCore}
+                      onWriteRx={(pid) => {
+                        setRxPatientId(pid)
+                        setActiveNav('rx')
+                        addRecent({ id: pid, type: 'patient', label: patients.find((x) => x.id === pid)?.name || 'Patient', sub: 'Patient Directory', module: 'rx' })
+                      }}
+                      onAdmitIpd={(pid, diag) => {
+                        setPendingIpdAdmit({ patientId: pid, diagnosis: diag })
+                        setActiveNav('ipd')
+                      }}
+                    />
+                  </ModuleAccessGate>
+                )}
 
-              {/* ==================== MEDICINE MASTER TAB ==================== */}
-              {activeNav === 'medicines' && <MedicineMasterTab />}
+                {/* ==================== MEDICINE MASTER TAB ==================== */}
+                {activeNav === 'medicines' && (
+                  <ModuleAccessGate
+                    moduleId="medicines"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    <MedicineMasterTab />
+                  </ModuleAccessGate>
+                )}
 
-              {/* ==================== LAB & BILLING TAB ==================== */}
-              {activeNav === 'billing' && <BillingAndLabsTab patients={patients} />}
+                {/* ==================== LAB & BILLING TAB ==================== */}
+                {activeNav === 'billing' && (
+                  <ModuleAccessGate
+                    moduleId="billing"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    <BillingAndLabsTab patients={patients} />
+                  </ModuleAccessGate>
+                )}
 
-              {/* ==================== #16 REFER & EARN TAB ==================== */}
-              {activeNav === 'referrals' && <ReferAndEarnTab />}
+                {/* ==================== #16 REFER & EARN TAB ==================== */}
+                {activeNav === 'referrals' && (
+                  <ModuleAccessGate
+                    moduleId="referrals"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    <ReferAndEarnTab />
+                  </ModuleAccessGate>
+                )}
 
-              {/* ==================== HOSPITAL SETTINGS TAB ==================== */}
-              {activeNav === 'settings' && (
-                <HospitalSettingsTab
-                  onRefreshGlobal={refreshCore}
-                  onOpenWizard={() => setWizardOpen(true)}
-                />
-              )}
-            </motion.div>
+                {/* ==================== HOSPITAL SETTINGS TAB ==================== */}
+                {activeNav === 'settings' && (
+                  <ModuleAccessGate
+                    moduleId="settings"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    <HospitalSettingsTab
+                      onRefreshGlobal={refreshCore}
+                      onOpenWizard={() => setWizardOpen(true)}
+                    />
+                  </ModuleAccessGate>
+                )}
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </div>
 
       {/* #18 Sticky Mobile-Optimized Bottom Navigation Bar */}
       <nav className="fixed bottom-0 inset-x-0 z-40 grid grid-cols-5 border-t border-slate-200 bg-white/95 backdrop-blur-md lg:hidden">
-        {(
-          [
-            { id: 'overview', label: 'Home', icon: LayoutDashboard },
-            { id: 'opd', label: 'OPD', icon: Activity },
-            { id: 'rx', label: 'Smart Rx', icon: Stethoscope },
-            { id: 'ipd', label: 'IPD Beds', icon: BedDouble },
-          ] as const
-        ).map((m) => {
+        {([
+          { id: 'overview', label: 'Home', icon: LayoutDashboard },
+          { id: 'opd', label: 'OPD', icon: Activity },
+          { id: 'rx', label: 'Smart Rx', icon: Stethoscope },
+          { id: 'ipd', label: 'IPD Beds', icon: BedDouble },
+        ] as const).map((m) => {
           const Icon = m.icon
           const active = activeNav === m.id
+          const visible = visibleNavItems.some((n) => n.id === m.id)
+          if (!visible) return null
           return (
             <button
               key={m.id}
@@ -892,13 +1181,13 @@ export default function HospitalDashboardPage() {
           <div className="w-64 bg-slate-950 text-white p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                <span className="font-bold truncate">{org?.name}</span>
+                <span className="font-bold truncate">{typedSession?.organization?.name}</span>
                 <button type="button" onClick={() => setMobileMenuOpen(false)}>
                   <X className="h-5 w-5" />
                 </button>
               </div>
               <div className="mt-4 space-y-1">
-                {NAV_ITEMS.map((item) => {
+                {visibleNavItems.map((item) => {
                   const Icon = item.icon
                   return (
                     <button
@@ -1004,6 +1293,11 @@ export default function HospitalDashboardPage() {
                   </button>
                 )
               })}
+              {commandResults.length === 0 && (
+                <div className="px-3 py-2 text-xs text-slate-400">
+                  No matching results
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1018,7 +1312,7 @@ export default function HospitalDashboardPage() {
       {/* #15 Guided Onboarding Data Capture Modal */}
       <OnboardingWizardModal
         open={wizardOpen}
-        initialClinicName={settings?.clinicDisplayName || org?.name || ''}
+        initialClinicName={settings?.clinicDisplayName || typedSession?.organization?.name || ''}
         initialUhidPrefix={settings?.uhidPrefix || 'HMS'}
         onClose={() => setWizardOpen(false)}
         onCompleted={refreshCore}

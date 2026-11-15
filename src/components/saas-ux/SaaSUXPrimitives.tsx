@@ -959,6 +959,31 @@ export function PlanQuotaCard({
   )
 }
 
+// Re-exports from sibling modules for convenient single import
+export {
+  BentoDashboardCard,
+  BentoDashboardGrid,
+} from './BentoDashboardCard'
+export { BreadcrumbNav } from './BreadcrumbNav'
+export { QuickActionFloating, QuickActionFab } from './QuickActionFloating'
+export { EnhancedFilterBar } from './EnhancedFilterBar'
+export {
+  ModuleAccessGate,
+  useSidebarModules,
+} from './ModuleAccessGate'
+export {
+  type ModuleDefinition,
+  type UserContext,
+  type PlanFeatures,
+  type ClinicModelConfig,
+  type HmsModuleId,
+  canAccessModule,
+  getAccessibleModules,
+  inferClinicModel,
+  parsePlanFeatures,
+  ROLE_INFO,
+} from '@/lib/role-access'
+
 // ============================================================================
 // #19 DESTRUCTIVE ACTION PROTECTION MODAL
 // ============================================================================
