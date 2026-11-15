@@ -12,6 +12,9 @@ export interface ClinicSettingsData {
   bankAccountNo?: string | null
   bankIfsc?: string | null
   rxFooterNote?: string | null
+  // Patient Portal access control
+  patientPortalEnabled?: boolean
+  portalWelcomeMessage?: string | null
 }
 
 export interface DoctorOption {

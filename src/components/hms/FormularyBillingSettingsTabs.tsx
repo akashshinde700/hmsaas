@@ -7,6 +7,7 @@ import {
   CreditCard,
   Database,
   FlaskConical,
+  Lock,
   Plus,
   Sparkles,
   Trash2,
@@ -658,6 +659,8 @@ export function HospitalSettingsTab({
     uhidPrefix: 'HMS',
     upiId: '',
     rxFooterNote: '',
+    patientPortalEnabled: false,
+    portalWelcomeMessage: '',
   })
   const [orgPlan, setOrgPlan] = useState<{ name: string; tier: string; status: string } | null>(null)
   const [staff, setStaff] = useState<Array<Record<string, unknown>>>([])
@@ -669,6 +672,7 @@ export function HospitalSettingsTab({
     specialization: 'General Medicine',
     qualification: 'MBBS, MD',
     consultationFee: '600',
+    portalAccessEnabled: false,
   })
 
   // #6 Autosave Draft on White-Label Branding Settings
@@ -782,6 +786,35 @@ export function HospitalSettingsTab({
           />
         </div>
 
+        {/* Patient Portal Access Control */}
+        <div className="col-span-2 rounded-xl border border-teal-200 bg-teal-50 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Lock className="h-4 w-4 text-teal-600" />
+              <h4 className="font-bold text-slate-900">Patient Portal Access</h4>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSettings({ ...settings, patientPortalEnabled: !settings.patientPortalEnabled })}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 ${settings.patientPortalEnabled ? 'bg-teal-600 border-teal-600' : 'bg-slate-200 border-slate-200'} transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600`}
+              aria-pressed={settings.patientPortalEnabled}
+            >
+              <span
+                className={`block h-5 w-5 rounded-full bg-white shadow-lg transition-transform ${settings.patientPortalEnabled ? 'translate-x-5' : 'translate-x-0.5'}`}
+              />
+            </button>
+          </div>
+          <p className="text-[11px] text-teal-700 mb-2">
+            जब ON हो तब ही आपके पेशेंट्स पोर्टल लॉगिन कर सकेंगे। डॉक्टर लेवल पर भी एक्सेस देना ज़रूरी है।
+          </p>
+          <SmartValidatedInput
+            label="Portal Welcome Message (shown to patients)"
+            value={settings.portalWelcomeMessage || ''}
+            onChange={(v) => setSettings({ ...settings, portalWelcomeMessage: v })}
+            placeholder="Welcome to our patient portal..."
+          />
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
           <button
             type="submit"
@@ -819,22 +852,39 @@ export function HospitalSettingsTab({
         </div>
 
         <div className="mt-4 space-y-2.5 text-xs">
-          {staff.map((u) => (
-            <div
-              key={String(u.id)}
-              className="rounded-xl border border-slate-100 bg-slate-50 p-3 flex items-center justify-between"
-            >
-              <div>
-                <p className="font-bold text-slate-900">{String(u.name)}</p>
-                <p className="text-slate-500">
-                  {String(u.email)} · {String(u.specialization || u.role)}
-                </p>
+          {staff.map((u) => {
+            const isDoctor = String(u.role) === 'DOCTOR'
+            const portalEnabled = Boolean(u.portalAccessEnabled)
+            return (
+              <div
+                key={String(u.id)}
+                className="rounded-xl border border-slate-100 bg-slate-50 p-3 flex items-center justify-between"
+              >
+                <div>
+                  <p className="font-bold text-slate-900">{String(u.name)}</p>
+                  <p className="text-slate-500">
+                    {String(u.email)} · {String(u.specialization || u.role)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-teal-50 px-2.5 py-0.5 font-bold text-teal-700">
+                    {String(u.role)}
+                  </span>
+                  {isDoctor && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        portalEnabled
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                      }`}
+                    >
+                      {portalEnabled ? 'Portal ON' : 'Portal OFF'}
+                    </span>
+                  )}
+                </div>
               </div>
-              <span className="rounded-full bg-teal-50 px-2.5 py-0.5 font-bold text-teal-700">
-                {String(u.role)}
-              </span>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -901,6 +951,21 @@ export function HospitalSettingsTab({
                   value={staffForm.specialization}
                   onChange={(v) => setStaffForm({ ...staffForm, specialization: v })}
                 />
+                {staffForm.role === 'DOCTOR' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={staffForm.portalAccessEnabled}
+                      onChange={(e) =>
+                        setStaffForm({ ...staffForm, portalAccessEnabled: e.target.checked })
+                      }
+                      className="rounded border-slate-300 bg-slate-50 text-teal-600 focus:ring-teal-500"
+                    />
+                    <label className="text-sm text-slate-600 font-medium">
+                      Enable Patient Portal Access for this doctor&rsquo;s patients
+                    </label>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button

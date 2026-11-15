@@ -290,6 +290,8 @@ model User {
   consultationFee      Float        @default(500)
   takesConsultations   Boolean      @default(true)
   isActive             Boolean      @default(true)
+  // Doctor-level: can this doctor's patients access the patient portal?
+  portalAccessEnabled  Boolean      @default(false)
   lastLogin            DateTime?
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
@@ -329,6 +331,9 @@ model ClinicSettings {
   onboardingCompleted Boolean      @default(false)
   onboardingDataJson  String       @default("{}")
   referralCode        String?
+  // Patient Portal access control — org level
+  patientPortalEnabled Boolean    @default(false) // Org admin enables portal for their patients
+  portalWelcomeMessage String?    // Custom message shown to patients on portal login
   updatedAt           DateTime     @updatedAt
 }
 

@@ -4,8 +4,10 @@ import { apiJson } from '@/lib/cache'
 import { hashPassword, verifyPassword } from '@/lib/crypto'
 
 /*
- * PATIENT AUTH — Phone-based OTP style login for the Patient Portal
- * Patients log in with their registered phone number + password.
+ * PATIENT AUTH — Phone-based login for the Patient Portal
+ * Access control:
+ *   1. Organization must have patientPortalEnabled = true (org-level opt-in)
+ *   2. Patient must have at least one prescription from a doctor with portalAccessEnabled = true (doctor-level opt-in)
  * Scope is strictly limited to their own patient record (organizationId from patient row).
  */
 
@@ -33,9 +35,14 @@ export async function POST(req: NextRequest) {
     include: {
       organization: {
         include: {
-          subscription: { include: { plan: true } },
           settings: true,
         },
+      },
+      prescriptions: {
+        include: {
+          doctor: true,
+        },
+        take: 1,
       },
     },
   })
@@ -44,9 +51,28 @@ export async function POST(req: NextRequest) {
     return apiJson({ error: 'Invalid phone or password.' }, { status: 401, startMs })
   }
 
+  // Org-level gate: patient portal must be enabled by org admin
+  const settings = patient.organization?.settings
+  if (!settings?.patientPortalEnabled) {
+    return apiJson(
+      { error: 'Patient portal is not enabled for your hospital. Please contact reception.' },
+      { status: 403, startMs }
+    )
+  }
+
+  // Doctor-level gate: patient must have at least one doctor with portalAccessEnabled
+  const hasPortalDoctor = patient.prescriptions.some(
+    (p) => p.doctor?.portalAccessEnabled === true
+  )
+  if (!hasPortalDoctor) {
+    return apiJson(
+      { error: 'Your doctor has not enabled portal access. Please ask your doctor.' },
+      { status: 403, startMs }
+    )
+  }
+
   // Verify password — store a simple hash for patient portal login
   // In production, this would use bcrypt with a per-patient password field
-  const patientPasswordHash = String(body.password || '')
   const isValid = patient.phone.endsWith(password) || password === 'patient123' // Dev fallback
   if (!isValid) {
     return apiJson({ error: 'Invalid phone or password.' }, { status: 401, startMs })
@@ -72,6 +98,7 @@ export async function POST(req: NextRequest) {
         phone: patient.phone,
         organizationId: patient.organizationId,
         organizationName: patient.organization.name,
+        portalWelcomeMessage: settings.portalWelcomeMessage || undefined,
       },
     },
     { startMs }
