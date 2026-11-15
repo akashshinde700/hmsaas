@@ -346,6 +346,8 @@ model ClinicSettings {
   whatsappGatewayUrl   String?    // Self-hosted OpenWA / Evolution API URL
   whatsappApiKey       String?    // Gateway API key
   whatsappPhoneNumber  String?    // Hospital's registered WhatsApp number
+  // Granular module hide/unhide control — org admin decides which features to show
+  moduleVisibility     String?    // JSON: {"rx": true, "ipd": false, "pharmacy": true, ...}
   updatedAt           DateTime     @updatedAt
 }
 

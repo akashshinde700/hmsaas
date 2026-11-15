@@ -425,16 +425,23 @@ export function canAccessModule(
 
 // -----------------------------------------------------------------------------
 // Get all accessible modules for a user, sorted by NAV order
-// Filters by role, plan, clinic model, AND doctor's speciality.
+// Filters by role, plan, clinic model, doctor's speciality, AND org-level
+// moduleVisibility JSON from ClinicSettings (hide/unhide per-module toggle).
 // -----------------------------------------------------------------------------
 export function getAccessibleModules(
   ctx: UserContext,
   planFeatures: PlanFeatures,
   clinicModel: ClinicModelConfig,
+  moduleVisibility?: Record<string, boolean> | null,
 ): ModuleDefinition[] {
-  const allModules = Object.values(MODULE_REGISTRY).filter((mod) =>
+  let allModules = Object.values(MODULE_REGISTRY).filter((mod) =>
     canAccessModule(mod.id, ctx, planFeatures, clinicModel),
   )
+
+  // Org-level module visibility gating — hidden modules are removed entirely
+  if (moduleVisibility) {
+    allModules = allModules.filter((mod) => mod.id === 'settings' || moduleVisibility[mod.id] !== false)
+  }
 
   // Speciality-wise filtering for doctors
   if (ctx.role === 'doctor' && ctx.specialization) {

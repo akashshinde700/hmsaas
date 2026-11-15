@@ -125,6 +125,14 @@ async function main() {
     const allDefs = [...colDefs, ...fkDefs]
     await client.execute(`CREATE TABLE IF NOT EXISTS "${modelName}" (\n  ${allDefs.join(',\n  ')}\n);`)
 
+    // CREATE TABLE IF NOT EXISTS does not add columns to existing databases.
+    if (modelName === 'ClinicSettings') {
+      const columns = await client.execute('PRAGMA table_info("ClinicSettings")')
+      if (!columns.rows.some((row) => row.name === 'moduleVisibility')) {
+        await client.execute('ALTER TABLE "ClinicSettings" ADD COLUMN "moduleVisibility" TEXT')
+      }
+    }
+
     for (const col of singleUniques) {
       await client.execute(
         `CREATE UNIQUE INDEX IF NOT EXISTS "${modelName}_${col}_key" ON "${modelName}"("${col}");`

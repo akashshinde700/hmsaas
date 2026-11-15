@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CreditCard,
   Database,
+  Eye,
   FlaskConical,
   Lock,
   Plus,
@@ -27,6 +28,77 @@ import {
   TierBadge,
 } from '@/components/saas-ux/SaaSUXPrimitives'
 import type { ClinicSettingsData, MedicineSearchResult, PatientRecord } from './types'
+
+// -----------------------------------------------------------------------------
+// Module visibility toggle items — shown in the settings UI for org admins
+// -----------------------------------------------------------------------------
+const MODULE_VISIBILITY_ITEMS: Array<{
+  id: 'overview' | 'opd' | 'rx' | 'ipd' | 'patients' | 'medicines' | 'pharmacy' | 'billing' | 'referrals' | 'settings'
+  label: string
+  desc: string
+  icon: typeof Building2
+}> = [
+  {
+    id: 'overview',
+    label: 'Command Overview',
+    desc: 'Dashboard KPIs & quick launchpad',
+    icon: Building2,
+  },
+  {
+    id: 'opd',
+    label: 'OPD Queue & Vitals',
+    desc: 'Today’s OPD tokens, vitals, queue',
+    icon: Building2,
+  },
+  {
+    id: 'rx',
+    label: 'Smart Rx Pad',
+    desc: 'Speciality-aware e-prescriptions',
+    icon: Building2,
+  },
+  {
+    id: 'ipd',
+    label: 'IPD & Bed Board',
+    desc: 'Admissions, ward beds, rounds',
+    icon: Building2,
+  },
+  {
+    id: 'patients',
+    label: 'Patients (UHID)',
+    desc: 'Patient directory & UHID records',
+    icon: Building2,
+  },
+  {
+    id: 'medicines',
+    label: 'Medicine Formulary',
+    desc: 'Drug catalog & formulary master',
+    icon: Building2,
+  },
+  {
+    id: 'pharmacy',
+    label: 'Pharmacy Stock',
+    desc: 'Inventory, batches, dispensing',
+    icon: Building2,
+  },
+  {
+    id: 'billing',
+    label: 'Lab & Billing',
+    desc: 'Invoices, payments, lab orders',
+    icon: Building2,
+  },
+  {
+    id: 'referrals',
+    label: 'Refer & Earn',
+    desc: 'Partner hospital referrals',
+    icon: Building2,
+  },
+  {
+    id: 'settings',
+    label: 'Hospital Settings',
+    desc: 'Branding, modules, onboarding',
+    icon: Building2,
+  },
+]
 
 export function MedicineMasterTab() {
   const [medicines, setMedicines] = useState<MedicineSearchResult[]>([])
@@ -694,6 +766,7 @@ export function HospitalSettingsTab({
     whatsappGatewayUrl: '',
     whatsappApiKey: '',
     whatsappPhoneNumber: '',
+    moduleVisibility: null,
   })
   const [orgPlan, setOrgPlan] = useState<{ name: string; tier: string; status: string } | null>(null)
   const [staff, setStaff] = useState<Array<Record<string, unknown>>>([])
@@ -719,7 +792,11 @@ export function HospitalSettingsTab({
     const res = await fetch('/api/settings')
     if (res.ok) {
       const d = await res.json()
-      if (d.settings) setSettings(d.settings)
+      if (d.settings) {
+        let moduleVisibility = {}
+        try { moduleVisibility = JSON.parse(d.settings.moduleVisibility || '{}') } catch { /* default visible */ }
+        setSettings({ ...d.settings, moduleVisibility })
+      }
       setStaff(d.staff || [])
       if (d.organization?.subscription?.plan) {
         setOrgPlan({
@@ -753,10 +830,21 @@ export function HospitalSettingsTab({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'updateBranding', ...settings }),
           })
-          if (res.ok) {
-            toast.success('Hospital letterhead & billing settings saved!')
-            onRefreshGlobal?.()
+          if (!res.ok) {
+            toast.error('Unable to save hospital settings.')
+            return
           }
+          const visibilityRes = await fetch('/api/settings/module-visibility', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ moduleVisibility: settings.moduleVisibility || {} }),
+          })
+          if (!visibilityRes.ok) {
+            toast.error('Hospital settings saved, but module visibility could not be saved.')
+            return
+          }
+          toast.success('Hospital settings and module visibility saved!')
+          onRefreshGlobal?.()
         }}
         className="lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs space-y-4 text-xs"
       >
@@ -925,6 +1013,59 @@ export function HospitalSettingsTab({
           />
           <p className="text-[11px] text-purple-700 mb-0 mt-1">
             OpenWA या Evolution API self-host करें। Hospital नंबर से QR स्कैन करके कनेक्ट करें।
+          </p>
+        </div>
+
+        {/* Module Hide/Unhide Visibility */ }
+        <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50 p-4 mt-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Eye className="h-4 w-4 text-amber-600" />
+              <h4 className="font-bold text-slate-900">Module Visibility (Hide / Unhide)</h4>
+            </div>
+            <p className="text-[11px] text-amber-700 text-right">
+              Org admin can individually hide / show dashboard modules
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {MODULE_VISIBILITY_ITEMS.filter((m) => m.id !== 'settings').map((m) => {
+              const isVisible = settings.moduleVisibility?.[m.id] !== false
+              return (
+                <div
+                  key={m.id}
+                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <m.icon className={`h-4 w-4 shrink-0 ${isVisible ? 'text-slate-600' : 'text-slate-400'}`} />
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{m.label}</p>
+                      <p className="text-[10px] text-slate-500">{m.desc}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        moduleVisibility: {
+                          ...(prev.moduleVisibility || {}),
+                          [m.id]: !isVisible,
+                        },
+                      }))
+                    }
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 ${isVisible ? 'bg-teal-600 border-teal-600' : 'bg-slate-200 border-slate-200'} transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600`}
+                    aria-pressed={isVisible}
+                  >
+                    <span
+                      className={`block h-5 w-5 rounded-full bg-white shadow-lg transition-transform ${isVisible ? 'translate-x-5' : 'translate-x-0.5'}`}
+                    />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-amber-700 mt-2">
+            Hidden modules are removed from navigation for all roles. This does not restrict API access.
           </p>
         </div>
 
