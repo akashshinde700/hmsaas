@@ -68,6 +68,25 @@ export async function POST(req: NextRequest) {
   if (!session) return apiJson({ error: 'Unauthorized' }, { status: 401, startMs })
 
   const body = await req.json()
+
+  // Bulk Actions on Patients List (VIP toggle or Bulk Delete)
+  if (body.action === 'bulkVip' && Array.isArray(body.ids)) {
+    await db.patient.updateMany({
+      where: { organizationId: session.organizationId, id: { in: body.ids.map(String) } },
+      data: { isVip: Boolean(body.isVip) },
+    })
+    invalidateCachePrefix(`dash:${session.organizationId}`)
+    return apiJson({ updated: body.ids.length }, { startMs })
+  }
+
+  if (body.action === 'bulkDelete' && Array.isArray(body.ids)) {
+    await db.patient.deleteMany({
+      where: { organizationId: session.organizationId, id: { in: body.ids.map(String) } },
+    })
+    invalidateCachePrefix(`dash:${session.organizationId}`)
+    return apiJson({ deleted: body.ids.length }, { startMs })
+  }
+
   const name = String(body.name || '').trim()
   const phone = String(body.phone || '').trim()
 

@@ -326,6 +326,9 @@ model ClinicSettings {
   headerColor         String       @default("#0d9488")
   rxFooterNote        String       @default("In case of emergency, please contact Hospital 24x7 Emergency Desk immediately.")
   defaultLanguage     String       @default("en") // en, hi, mr
+  onboardingCompleted Boolean      @default(false)
+  onboardingDataJson  String       @default("{}")
+  referralCode        String?
   updatedAt           DateTime     @updatedAt
 }
 
@@ -818,4 +821,51 @@ model Payment {
 
   @@unique([organizationId, paymentNo])
   @@index([organizationId, paidAt])
+}
+
+// ============================================================================
+// 8. SAAS REFERRAL & AFFILIATE PROGRAM
+// ============================================================================
+
+model AffiliatePartner {
+  id                  String   @id @default(cuid())
+  name                String
+  email               String   @unique
+  phone               String?
+  companyOrClinic     String?
+  city                String?
+  referralCode        String   @unique // e.g. AFF-PUNE20, HOSP-SAHYADRI
+  upiOrBankDetails    String?
+  commissionPercent   Float    @default(20) // 20% recurring commission
+  clicksCount         Int      @default(0)
+  totalReferrals      Int      @default(0)
+  convertedCount      Int      @default(0)
+  totalEarnedINR      Float    @default(0)
+  pendingPayoutINR    Float    @default(0)
+  organizationId      String?  // Optional link if an existing tenant clinic is referring peers
+  status              String   @default("active") // active, paused
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  leads ReferralLead[]
+
+  @@index([referralCode])
+}
+
+model ReferralLead {
+  id                 String           @id @default(cuid())
+  partnerId          String
+  partner            AffiliatePartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  referredClinicName String
+  contactName        String
+  contactPhone       String
+  contactEmail       String?
+  city               String?
+  planInterested     String           @default("Advance Hospital")
+  status             String           @default("submitted") // submitted, demo_booked, converted, paid_out
+  rewardAmountINR    Float            @default(999)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([partnerId, status])
 }

@@ -23,11 +23,16 @@ export async function GET(req: NextRequest) {
       globalMedCount,
       customMedCount,
       pendingLabs,
+      doctors,
+      allStaffCount,
+      branchesCount,
+      settings,
+      org,
     ] = await Promise.all([
       db.patient.count({ where: { organizationId: orgId } }),
       db.opdQueue.findMany({
         where: { organizationId: orgId, queueDate: todayStr },
-        include: { patient: true, doctor: { select: { name: true } } },
+        include: { patient: true, doctor: { select: { id: true, name: true } } },
         orderBy: { tokenNumber: 'asc' },
       }),
       db.bed.findMany({
@@ -39,7 +44,7 @@ export async function GET(req: NextRequest) {
         include: {
           patient: true,
           bed: { include: { category: true } },
-          admittingDoctor: { select: { name: true } },
+          admittingDoctor: { select: { id: true, name: true } },
           chargeItems: true,
           medicationOrders: true,
           deposits: true,
@@ -63,6 +68,26 @@ export async function GET(req: NextRequest) {
       dbUnscoped.medicine.count({ where: { organizationId: null, isActive: true } }),
       dbUnscoped.medicine.count({ where: { organizationId: orgId, isActive: true } }),
       db.labOrder.count({ where: { organizationId: orgId, status: { not: 'completed' } } }),
+      db.user.findMany({
+        where: { organizationId: orgId, isActive: true },
+        select: {
+          id: true,
+          name: true,
+          role: true,
+          specialization: true,
+          qualification: true,
+          registrationNo: true,
+          consultationFee: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      db.user.count({ where: { organizationId: orgId, isActive: true } }),
+      db.branch.count({ where: { organizationId: orgId } }),
+      db.clinicSettings.findFirst({ where: { organizationId: orgId } }),
+      dbUnscoped.organization.findUnique({
+        where: { id: orgId },
+        include: { subscription: { include: { plan: true } } },
+      }),
     ])
 
     const occupiedBedIds = new Set(activeAdmissions.map((a) => a.bedId))
@@ -73,8 +98,8 @@ export async function GET(req: NextRequest) {
     ).length
     const freeBeds = Math.max(0, totalBeds - occupiedBeds - maintenanceBeds)
 
-    const ipdSummaries = activeAdmissions.map((adm) => {
-      const bill = calculateIpdRunningBill({
+    const enrichedActiveAdmissions = activeAdmissions.map((adm) => {
+      const financials = calculateIpdRunningBill({
         admittedAt: adm.admittedAt,
         dailyRate: adm.bed.category.dailyRate,
         nursingChargeDay: adm.bed.category.nursingChargeDay,
@@ -84,44 +109,65 @@ export async function GET(req: NextRequest) {
         preAuthAmount: adm.preAuthAmount,
       })
       return {
-        id: adm.id,
-        admissionNo: adm.admissionNo,
-        patientName: adm.patient.name,
-        uhid: adm.patient.uhid,
-        bedNumber: adm.bed.bedNumber,
-        wardName: adm.bed.category.name,
-        doctorName: adm.admittingDoctor.name,
-        diagnosis: adm.provisionalDiagnosis,
-        admittedAt: adm.admittedAt,
-        stayDays: bill.stayDays,
-        grossTotal: bill.grossTotal,
-        depositsPaid: bill.depositsPaidTotal,
-        netPayable: bill.netPayable,
+        ...adm,
+        financials,
       }
     })
 
     const collectedRevenue = invoices.reduce((s, i) => s + (i.amountPaid || 0), 0)
-    const ipdRunningUnbilled = ipdSummaries.reduce((s, i) => s + i.grossTotal, 0)
+    const runningIpdUnbilled = enrichedActiveAdmissions.reduce(
+      (s, i) => s + i.financials.grossTotal,
+      0
+    )
+
+    const plan = org?.subscription?.plan
+    const doctorsCount = doctors.filter(
+      (u) => u.role.toLowerCase().includes('doctor') || u.role.toLowerCase().includes('admin')
+    ).length
 
     return {
       kpis: {
         totalPatients,
+        opdTotalToday: opdToday.length,
         opdTodayTotal: opdToday.length,
         opdWaiting: opdToday.filter((q) => q.status === 'waiting' || q.status === 'vitals_done').length,
         opdInConsult: opdToday.filter((q) => q.status === 'in_consultation').length,
         opdCompleted: opdToday.filter((q) => q.status === 'completed').length,
         totalBeds,
         occupiedBeds,
+        availableBeds: freeBeds,
         freeBeds,
         maintenanceBeds,
+        occupancyRate: totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0,
         occupancyPercent: totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0,
         collectedRevenue,
-        ipdRunningUnbilled,
+        runningIpdUnbilled,
+        ipdRunningUnbilled: runningIpdUnbilled,
         pendingLabs,
+        medicineCatalogCount: globalMedCount + customMedCount,
         medwikiCatalogSize: globalMedCount + customMedCount,
       },
-      opdQueue: opdToday.slice(0, 8),
-      activeIpd: ipdSummaries,
+      planUsage: {
+        planName: plan?.name || 'Advance Hospital',
+        tier: plan?.tier || 'advance',
+        status: org?.subscription?.status || org?.status || 'active',
+        billingCycle: org?.subscription?.billingCycle || 'monthly',
+        trialEndsAt: org?.subscription?.trialEndsAt || null,
+        currentPeriodEnd: org?.subscription?.currentPeriodEnd || null,
+        doctorsUsed: doctorsCount,
+        doctorLimit: plan?.doctorLimit ?? 10,
+        bedsUsed: totalBeds,
+        bedLimit: plan?.bedLimit ?? 50,
+        staffUsed: allStaffCount,
+        staffLimit: plan?.staffLimit ?? 25,
+        branchesUsed: branchesCount,
+        branchLimit: plan?.branchLimit ?? 3,
+        storageLimitMB: plan?.storageLimitMB ?? 10240,
+      },
+      doctors,
+      settings,
+      opdQueue: opdToday.slice(0, 12),
+      activeAdmissions: enrichedActiveAdmissions,
       recentPrescriptions,
     }
   })

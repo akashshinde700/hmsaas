@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server'
 import { db, dbUnscoped } from '@/lib/db'
-import { apiJson } from '@/lib/cache'
+import { apiJson, invalidateCachePrefix } from '@/lib/cache'
 import { verifyActiveTenantSession } from '@/lib/auth'
-import { hashPassword } from '@/lib/crypto'
+import { encryptSecret, generateStrongPassword, hashPassword } from '@/lib/crypto'
 
 export async function GET(req: NextRequest) {
   const startMs = performance.now()
@@ -46,9 +46,9 @@ export async function POST(req: NextRequest) {
 
   const orgId = session.organizationId
   const body = await req.json()
-  const action = String(body.action || 'updateSettings')
+  const action = String(body.action || 'updateBranding')
 
-  if (action === 'addStaff') {
+  if (action === 'addStaff' || action === 'createStaff') {
     const email = String(body.email || '').trim().toLowerCase()
     const name = String(body.name || '').trim()
     if (!email || !name) {
@@ -58,24 +58,65 @@ export async function POST(req: NextRequest) {
     if (exists) {
       return apiJson({ error: 'Email already in use.' }, { status: 409, startMs })
     }
+    const tempPassword = String(body.password || generateStrongPassword())
     const mainBranch = await db.branch.findFirst({ where: { organizationId: orgId } })
     const created = await db.user.create({
       data: {
         organizationId: orgId,
         branchId: mainBranch?.id || null,
         email,
-        password: await hashPassword(String(body.password || 'Doctor@123')),
+        password: await hashPassword(tempPassword),
+        generatedPasswordEnc: encryptSecret(tempPassword),
         name,
         phone: body.phone ? String(body.phone) : null,
-        role: String(body.role || 'doctor'),
+        role: String(body.role || 'DOCTOR'),
         specialization: body.specialization ? String(body.specialization) : null,
         qualification: body.qualification ? String(body.qualification) : null,
         registrationNo: body.registrationNo ? String(body.registrationNo) : null,
         consultationFee: Number(body.consultationFee || 500),
-        takesConsultations: body.role === 'doctor' || Boolean(body.takesConsultations),
+        takesConsultations:
+          String(body.role || '').toLowerCase() === 'doctor' || Boolean(body.takesConsultations),
       },
     })
-    return apiJson({ user: created }, { status: 201, startMs })
+    invalidateCachePrefix(`dash:${orgId}`)
+    return apiJson({ user: created, temporaryPassword: tempPassword }, { status: 201, startMs })
+  }
+
+  if (action === 'completeOnboarding') {
+    const onboardingPayload = {
+      primarySpecialty: String(body.primarySpecialty || 'Multispecialty OPD + IPD'),
+      opdTimings: String(body.opdTimings || '09:00 AM – 09:00 PM'),
+      avgDailyOpd: String(body.avgDailyOpd || '40–80 Patients'),
+      ipdFocus: String(body.ipdFocus || 'General + Private + ICU Wards'),
+      heardFrom: String(body.heardFrom || 'Doctor Peer Referral'),
+      completedAt: new Date().toISOString(),
+      completedBy: session.email,
+    }
+
+    const updated = await dbUnscoped.clinicSettings.upsert({
+      where: { organizationId: orgId },
+      update: {
+        ...(body.clinicDisplayName
+          ? { clinicDisplayName: String(body.clinicDisplayName).trim() }
+          : {}),
+        ...(body.uhidPrefix ? { uhidPrefix: String(body.uhidPrefix).toUpperCase().trim() } : {}),
+        ...(body.phone ? { phone: String(body.phone).trim() } : {}),
+        ...(body.upiId ? { upiId: String(body.upiId).trim() } : {}),
+        ...(body.defaultLanguage ? { defaultLanguage: String(body.defaultLanguage) } : {}),
+        onboardingCompleted: true,
+        onboardingDataJson: JSON.stringify(onboardingPayload),
+      },
+      create: {
+        organizationId: orgId,
+        clinicDisplayName: String(body.clinicDisplayName || 'Hospital').trim(),
+        uhidPrefix: String(body.uhidPrefix || 'UHID').toUpperCase().trim(),
+        onboardingCompleted: true,
+        onboardingDataJson: JSON.stringify(onboardingPayload),
+      },
+    })
+
+    invalidateCachePrefix(`dash:${orgId}`)
+    return apiJson({ settings: updated }, { startMs })
   }
 
   if (action === 'addBranch') {
@@ -89,6 +130,7 @@ export async function POST(req: NextRequest) {
         phone: body.phone ? String(body.phone) : null,
       },
     })
+    invalidateCachePrefix(`dash:${orgId}`)
     return apiJson({ branch }, { status: 201, startMs })
   }
 
@@ -115,5 +157,6 @@ export async function POST(req: NextRequest) {
     },
   })
 
+  invalidateCachePrefix(`dash:${orgId}`)
   return apiJson({ settings: updated }, { startMs })
 }

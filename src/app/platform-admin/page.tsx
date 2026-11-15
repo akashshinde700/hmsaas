@@ -5,9 +5,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Check,
+  CheckCircle2,
   ClipboardCopy,
   Database,
   ExternalLink,
+  Gift,
   Plus,
   RefreshCw,
   Search,
@@ -17,6 +19,20 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  useDebouncedValue,
+  useNetworkRecovery,
+  usePersistentState,
+} from '@/hooks/useSaaSUX'
+import {
+  ConfirmDestructiveModal,
+  EmptyStateCard,
+  ErrorRecoveryBanner,
+  NetworkRecoveryBanner,
+  SkeletonKpiGrid,
+  SkeletonTableRows,
+  TierBadge,
+} from '@/components/saas-ux/SaaSUXPrimitives'
 
 interface Plan {
   id: string
@@ -89,6 +105,35 @@ interface BlogPostRow {
   publishedAt: string
 }
 
+interface ReferralLeadRow {
+  id: string
+  partnerId: string
+  referredClinicName: string
+  contactName: string
+  contactPhone: string
+  contactEmail: string | null
+  city: string | null
+  planInterested: string | null
+  status: string
+  rewardAmountINR: number
+  createdAt: string
+}
+
+interface AffiliatePartnerRow {
+  id: string
+  name: string
+  email: string
+  phone: string | null
+  companyOrClinic: string | null
+  city: string | null
+  referralCode: string
+  commissionPercent: number
+  clicksCount: number
+  convertedCount: number
+  totalEarnedINR: number
+  leads: ReferralLeadRow[]
+}
+
 interface MedwikiState {
   totalGlobal: number
   totalCustom: number
@@ -143,14 +188,31 @@ export default function PlatformAdminPage() {
   const [loginName, setLoginName] = useState('Akash Shinde')
   const [busy, setBusy] = useState(false)
 
-  const [tab, setTab] = useState<'orgs' | 'plans' | 'inquiries' | 'medwiki' | 'blog'>('orgs')
+  const [tab, setTab] = usePersistentState<'orgs' | 'plans' | 'inquiries' | 'referrals' | 'medwiki' | 'blog'>(
+    'aethermed:platform_admin_tab',
+    'orgs'
+  )
+  const { isOnline, justRecovered, dismissRecovery } = useNetworkRecovery()
+  const [dataLoading, setDataLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
   const [orgs, setOrgs] = useState<OrgRow[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
   const [inquiries, setInquiries] = useState<InquiryRow[]>([])
+  const [selectedInquiries, setSelectedInquiries] = useState<string[]>([])
+  const [inquiryFilter, setInquiryFilter] = useState<string>('all')
+  const [partners, setPartners] = useState<AffiliatePartnerRow[]>([])
   const [posts, setPosts] = useState<BlogPostRow[]>([])
   const [medwiki, setMedwiki] = useState<MedwikiState | null>(null)
   const [medQuery, setMedQuery] = useState('')
+  const debouncedMedQuery = useDebouncedValue(medQuery, 220)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // Destructive protection modals (#19)
+  const [deleteOrgTarget, setDeleteOrgTarget] = useState<OrgRow | null>(null)
+  const [deletePlanTarget, setDeletePlanTarget] = useState<Plan | null>(null)
+  const [confirmBulkDeleteInquiries, setConfirmBulkDeleteInquiries] = useState(false)
+  const [destructiveBusy, setDestructiveBusy] = useState(false)
 
   // Modals
   const [showCreateClinic, setShowCreateClinic] = useState(false)
@@ -184,22 +246,35 @@ export default function PlatformAdminPage() {
   })
 
   const loadAll = useCallback(async (q = '') => {
-    const [oRes, pRes, iRes, bRes, mRes] = await Promise.all([
-      fetch('/api/platform/organizations'),
-      fetch('/api/platform/plans'),
-      fetch('/api/platform/inquiries'),
-      fetch('/api/platform/blog'),
-      fetch(`/api/platform/medwiki${q ? `?q=${encodeURIComponent(q)}` : ''}`),
-    ])
-    if (oRes.status === 401) {
-      setAdmin(null)
-      return
+    setDataLoading(true)
+    setLoadError(null)
+    try {
+      const [oRes, pRes, iRes, rRes, bRes, mRes] = await Promise.all([
+        fetch('/api/platform/organizations'),
+        fetch('/api/platform/plans'),
+        fetch('/api/platform/inquiries'),
+        fetch('/api/referrals?scope=platform'),
+        fetch('/api/platform/blog'),
+        fetch(`/api/platform/medwiki${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+      ])
+      if (oRes.status === 401) {
+        setAdmin(null)
+        return
+      }
+      if (oRes.ok) setOrgs(await oRes.json())
+      if (pRes.ok) setPlans(await pRes.json())
+      if (iRes.ok) setInquiries(await iRes.json())
+      if (rRes.ok) {
+        const rData = await rRes.json()
+        setPartners(Array.isArray(rData.partners) ? rData.partners : [])
+      }
+      if (bRes.ok) setPosts(await bRes.json())
+      if (mRes.ok) setMedwiki(await mRes.json())
+    } catch {
+      setLoadError('Unable to reach Platform Control Plane APIs. Please verify connection and retry.')
+    } finally {
+      setDataLoading(false)
     }
-    if (oRes.ok) setOrgs(await oRes.json())
-    if (pRes.ok) setPlans(await pRes.json())
-    if (iRes.ok) setInquiries(await iRes.json())
-    if (bRes.ok) setPosts(await bRes.json())
-    if (mRes.ok) setMedwiki(await mRes.json())
   }, [])
 
   useEffect(() => {
@@ -213,8 +288,8 @@ export default function PlatformAdminPage() {
   }, [])
 
   useEffect(() => {
-    if (admin) loadAll()
-  }, [admin, loadAll])
+    if (admin) loadAll(debouncedMedQuery)
+  }, [admin, debouncedMedQuery, loadAll])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -290,23 +365,122 @@ export default function PlatformAdminPage() {
     router.push('/dashboard')
   }
 
-  async function handleDeleteOrg(org: OrgRow) {
-    const typed = window.prompt(
-      `PERMANENT DELETE — removes "${org.name}" and all ${org.usage.patients} patient(s), IPD admissions & invoices.\n\nType "${org.name}" exactly to confirm:`
+  async function executeDeleteOrg() {
+    if (!deleteOrgTarget) return
+    setDestructiveBusy(true)
+    try {
+      const res = await fetch(`/api/platform/organizations/${deleteOrgTarget.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmName: deleteOrgTarget.name }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Deletion rejected')
+        return
+      }
+      toast.success(`Deleted "${data.deleted}"`)
+      setOrgs((prev) => prev.filter((o) => o.id !== deleteOrgTarget.id))
+      setDeleteOrgTarget(null)
+      await loadAll(debouncedMedQuery)
+    } finally {
+      setDestructiveBusy(false)
+    }
+  }
+
+  async function executeDeletePlan() {
+    if (!deletePlanTarget) return
+    setDestructiveBusy(true)
+    try {
+      const res = await fetch(`/api/platform/plans?id=${deletePlanTarget.id}`, {
+        method: 'DELETE',
+      })
+      const d = await res.json()
+      if (!res.ok) {
+        toast.error(d.error || 'Delete failed')
+        return
+      }
+      toast.success(`Plan "${deletePlanTarget.name}" deleted`)
+      setPlans((prev) => prev.filter((p) => p.id !== deletePlanTarget.id))
+      setDeletePlanTarget(null)
+      await loadAll(debouncedMedQuery)
+    } finally {
+      setDestructiveBusy(false)
+    }
+  }
+
+  async function handleBulkInquiryStatus(newStatus: string) {
+    if (selectedInquiries.length === 0) return
+    const prev = inquiries
+    setInquiries((curr) =>
+      curr.map((inq) => (selectedInquiries.includes(inq.id) ? { ...inq, status: newStatus } : inq))
     )
-    if (!typed) return
-    const res = await fetch(`/api/platform/organizations/${org.id}`, {
-      method: 'DELETE',
+    const ids = [...selectedInquiries]
+    setSelectedInquiries([])
+    const res = await fetch('/api/platform/inquiries', {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirmName: typed }),
+      body: JSON.stringify({ action: 'bulkStatus', ids, status: newStatus }),
     })
-    const data = await res.json()
     if (!res.ok) {
-      toast.error(data.error || 'Deletion rejected')
+      setInquiries(prev)
+      toast.error('Bulk update failed — rolled back')
       return
     }
-    toast.success(`Deleted "${data.deleted}"`)
-    await loadAll()
+    toast.success(`Updated ${ids.length} inquiries to "${newStatus}"`)
+  }
+
+  async function executeBulkDeleteInquiries() {
+    if (selectedInquiries.length === 0) return
+    setDestructiveBusy(true)
+    const ids = [...selectedInquiries]
+    const prev = inquiries
+    setInquiries((curr) => curr.filter((inq) => !ids.includes(inq.id)))
+    try {
+      const res = await fetch('/api/platform/inquiries', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bulkDelete', ids }),
+      })
+      if (!res.ok) {
+        setInquiries(prev)
+        toast.error('Bulk delete failed')
+        return
+      }
+      setSelectedInquiries([])
+      setConfirmBulkDeleteInquiries(false)
+      toast.success(`Deleted ${ids.length} selected inquiries`)
+    } finally {
+      setDestructiveBusy(false)
+    }
+  }
+
+  async function handleApproveReferralLead(leadId: string, partnerId: string, rewardAmountINR: number) {
+    const prevPartners = partners
+    // Optimistic UI (#1)
+    setPartners((curr) =>
+      curr.map((p) =>
+        p.id === partnerId
+          ? {
+              ...p,
+              convertedCount: p.convertedCount + 1,
+              totalEarnedINR: p.totalEarnedINR + rewardAmountINR,
+              leads: p.leads.map((l) => (l.id === leadId ? { ...l, status: 'converted' } : l)),
+            }
+          : p
+      )
+    )
+    const res = await fetch('/api/referrals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'approveLead', leadId }),
+    })
+    if (!res.ok) {
+      setPartners(prevPartners)
+      toast.error('Failed to approve referral lead')
+      return
+    }
+    toast.success(`Approved referral & credited ₹${rewardAmountINR.toLocaleString('en-IN')} commission!`)
   }
 
   async function handleCreateClinic(e: React.FormEvent) {
@@ -551,6 +725,7 @@ export default function PlatformAdminPage() {
                   id: 'inquiries',
                   label: `Inquiries${newInquiriesCount > 0 ? ` (${newInquiriesCount} new)` : ''}`,
                 },
+                { id: 'referrals', label: `Affiliates (${partners.length})` },
                 { id: 'medwiki', label: `MedWiki DB (${medwiki?.totalGlobal ?? 0})` },
                 { id: 'blog', label: 'Blog' },
               ] as const
@@ -589,7 +764,17 @@ export default function PlatformAdminPage() {
       </header>
 
       {/* Main Content Container */}
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 space-y-6">
+        <ErrorRecoveryBanner error={loadError} onRetry={() => loadAll(debouncedMedQuery)} />
+
+        {dataLoading && orgs.length === 0 && (
+          <div className="space-y-4">
+            <SkeletonKpiGrid count={4} />
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+              <SkeletonTableRows rows={5} cols={6} />
+            </div>
+          </div>
+        )}
         {/* ================= TAB 1: ORGANIZATIONS (Exact image-1.png Layout) ================= */}
         {tab === 'orgs' && (
           <div>
@@ -631,6 +816,11 @@ export default function PlatformAdminPage() {
                         <td className="py-5 px-5 max-w-[220px]">
                           <p className="font-semibold text-slate-900 leading-snug">{org.name}</p>
                           <p className="mt-0.5 text-xs text-slate-400 break-all">{org.slug}</p>
+                          {plan && (
+                            <div className="mt-1.5">
+                              <TierBadge tier={plan.tier} planName={plan.name} status={effStatus} />
+                            </div>
+                          )}
                         </td>
 
                         {/* LOGIN */}
@@ -790,7 +980,7 @@ export default function PlatformAdminPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteOrg(org)}
+                              onClick={() => setDeleteOrgTarget(org)}
                               className="rounded-full border border-rose-200 bg-white px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50"
                             >
                               Delete
@@ -874,16 +1064,7 @@ export default function PlatformAdminPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (!window.confirm(`Delete plan "${p.name}"?`)) return
-                        const res = await fetch(`/api/platform/plans?id=${p.id}`, { method: 'DELETE' })
-                        const d = await res.json()
-                        if (!res.ok) toast.error(d.error || 'Delete failed')
-                        else {
-                          toast.success('Plan deleted')
-                          loadAll()
-                        }
-                      }}
+                      onClick={() => setDeletePlanTarget(p)}
                       className="rounded-lg border border-rose-200 p-1.5 text-rose-600 hover:bg-rose-50"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -895,128 +1076,336 @@ export default function PlatformAdminPage() {
           </div>
         )}
 
-        {/* ================= TAB 3: SALES INQUIRIES ================= */}
+        {/* ================= TAB 3: SALES INQUIRIES (#1, #10, #12, #19) ================= */}
         {tab === 'inquiries' && (
           <div>
-            <h2 className="text-lg font-bold text-slate-800 mb-4">
-              Landing Page Demo Inquiries ({inquiries.length})
-            </h2>
-            <div className="space-y-4">
-              {inquiries.map((inq) => (
-                <div key={inq.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2.5">
-                        <h3 className="font-bold text-slate-900 text-base">{inq.clinicName}</h3>
-                        <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-700">
-                          {inq.status}
-                        </span>
-                        {inq.selectedPlan && (
-                          <span className="rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-medium text-teal-700">
-                            Plan: {inq.selectedPlan}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-xs text-slate-600">
-                        <strong>{inq.contactName}</strong> · {inq.email}
-                        {inq.phone ? ` · ${inq.phone}` : ''}
-                        {inq.city ? ` · ${inq.city}` : ''} · {inq.facilityType}
-                      </p>
-                      {inq.message && (
-                        <p className="mt-2 rounded-lg bg-slate-50 p-2.5 text-xs text-slate-700">
-                          &ldquo;{inq.message}&rdquo;
-                        </p>
-                      )}
-                    </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-bold text-slate-800">
+                Landing Page Demo Inquiries ({inquiries.length})
+              </h2>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                {(['all', 'new', 'follow_up', 'demo', 'converted', 'closed'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setInquiryFilter(st)}
+                    className={`rounded-full px-3 py-1 font-semibold transition ${
+                      inquiryFilter === st
+                        ? 'bg-[#0f8a77] text-white'
+                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {st === 'all' ? 'All Leads' : st}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={inq.status}
-                        onChange={async (e) => {
-                          await fetch('/api/platform/inquiries', {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: inq.id, status: e.target.value }),
-                          })
-                          loadAll()
-                        }}
-                        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium"
+            {selectedInquiries.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-xs">
+                <span className="font-bold text-teal-950">
+                  {selectedInquiries.length} inquiry lead(s) selected
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleBulkInquiryStatus('follow_up')}
+                    className="rounded-lg bg-white border border-teal-300 px-3 py-1.5 font-semibold text-teal-900 hover:bg-teal-100"
+                  >
+                    Mark Follow-Up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkInquiryStatus('demo')}
+                    className="rounded-lg bg-white border border-teal-300 px-3 py-1.5 font-semibold text-teal-900 hover:bg-teal-100"
+                  >
+                    Mark Demo Scheduled
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmBulkDeleteInquiries(true)}
+                    className="rounded-lg bg-rose-600 px-3 py-1.5 font-bold text-white hover:bg-rose-700"
+                  >
+                    Delete Selected
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInquiries([])}
+                    className="text-slate-500 hover:text-slate-800 px-2"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {inquiries.filter((i) => inquiryFilter === 'all' || i.status === inquiryFilter).length === 0 ? (
+              <EmptyStateCard
+                title="No matching demo inquiries"
+                description="Switch the status filter above or submit a test inquiry on the Landing Page."
+              />
+            ) : (
+              <div className="space-y-4">
+                {inquiries
+                  .filter((i) => inquiryFilter === 'all' || i.status === inquiryFilter)
+                  .map((inq) => {
+                    const checkedRow = selectedInquiries.includes(inq.id)
+                    return (
+                      <div
+                        key={inq.id}
+                        className={`rounded-2xl border bg-white p-5 shadow-2xs transition ${
+                          checkedRow ? 'border-teal-400 ring-2 ring-teal-500/15' : 'border-slate-200'
+                        }`}
                       >
-                        <option value="new">new</option>
-                        <option value="follow_up">follow_up</option>
-                        <option value="demo">demo</option>
-                        <option value="converted">converted</option>
-                        <option value="closed">closed</option>
-                      </select>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setClinicForm({
-                            name: inq.clinicName,
-                            adminName: inq.contactName,
-                            adminEmail: inq.email,
-                            phone: inq.phone || '',
-                            city: inq.city || 'Pune',
-                            planId: plans[1]?.id || plans[0]?.id || '',
-                            startMode: 'trial7',
-                          })
-                          setTab('orgs')
-                          setShowCreateClinic(true)
-                        }}
-                        className="rounded-lg bg-[#0f8a77] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0c7464]"
-                      >
-                        Convert to Clinic →
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Follow-up notes */}
-                  <div className="mt-4 border-t border-slate-100 pt-3">
-                    {inq.followUps.length > 0 && (
-                      <div className="mb-2 space-y-1 text-xs text-slate-600">
-                        {inq.followUps.map((f) => (
-                          <div key={f.id} className="rounded bg-slate-50 px-2.5 py-1">
-                            <strong>{f.date} ({f.by}):</strong> {f.note}
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={checkedRow}
+                              onChange={(e) =>
+                                setSelectedInquiries((prev) =>
+                                  e.target.checked
+                                    ? [...prev, inq.id]
+                                    : prev.filter((x) => x !== inq.id)
+                                )
+                              }
+                              className="mt-1.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            />
+                            <div>
+                              <div className="flex items-center gap-2.5">
+                                <h3 className="font-bold text-slate-900 text-base">{inq.clinicName}</h3>
+                                <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-700">
+                                  {inq.status}
+                                </span>
+                                {inq.selectedPlan && (
+                                  <span className="rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-medium text-teal-700">
+                                    Plan: {inq.selectedPlan}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 text-xs text-slate-600">
+                                <strong>{inq.contactName}</strong> · {inq.email}
+                                {inq.phone ? ` · ${inq.phone}` : ''}
+                                {inq.city ? ` · ${inq.city}` : ''} · {inq.facilityType}
+                              </p>
+                              {inq.message && (
+                                <p className="mt-2 rounded-lg bg-slate-50 p-2.5 text-xs text-slate-700">
+                                  &ldquo;{inq.message}&rdquo;
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        ))}
+
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={inq.status}
+                              onChange={async (e) => {
+                                const nextStatus = e.target.value
+                                // Optimistic status update (#1)
+                                setInquiries((curr) =>
+                                  curr.map((item) =>
+                                    item.id === inq.id ? { ...item, status: nextStatus } : item
+                                  )
+                                )
+                                await fetch('/api/platform/inquiries', {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ id: inq.id, status: nextStatus }),
+                                })
+                              }}
+                              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium"
+                            >
+                              <option value="new">new</option>
+                              <option value="follow_up">follow_up</option>
+                              <option value="demo">demo</option>
+                              <option value="converted">converted</option>
+                              <option value="closed">closed</option>
+                            </select>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setClinicForm({
+                                  name: inq.clinicName,
+                                  adminName: inq.contactName,
+                                  adminEmail: inq.email,
+                                  phone: inq.phone || '',
+                                  city: inq.city || 'Pune',
+                                  planId: plans[1]?.id || plans[0]?.id || '',
+                                  startMode: 'trial7',
+                                })
+                                setTab('orgs')
+                                setShowCreateClinic(true)
+                              }}
+                              className="rounded-lg bg-[#0f8a77] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0c7464]"
+                            >
+                              Convert to Clinic →
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Follow-up notes */}
+                        <div className="mt-4 border-t border-slate-100 pt-3">
+                          {inq.followUps.length > 0 && (
+                            <div className="mb-2 space-y-1 text-xs text-slate-600">
+                              {inq.followUps.map((f) => (
+                                <div key={f.id} className="rounded bg-slate-50 px-2.5 py-1">
+                                  <strong>{f.date} ({f.by}):</strong> {f.note}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <input
+                              value={followUpNotes[inq.id] || ''}
+                              onChange={(e) =>
+                                setFollowUpNotes({ ...followUpNotes, [inq.id]: e.target.value })
+                              }
+                              placeholder="Add sales follow-up note..."
+                              className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                            />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const note = (followUpNotes[inq.id] || '').trim()
+                                if (!note) return
+                                await fetch('/api/platform/inquiries', {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    id: inq.id,
+                                    status: inq.status === 'new' ? 'follow_up' : inq.status,
+                                    newFollowUpNote: note,
+                                  }),
+                                })
+                                setFollowUpNotes({ ...followUpNotes, [inq.id]: '' })
+                                loadAll(debouncedMedQuery)
+                              }}
+                              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Save Note
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================= TAB 3B: AFFILIATES & REFERRALS (#16) ================= */}
+        {tab === 'referrals' && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Gift className="h-5 w-5 text-[#0f8a77]" />
+                  Affiliate Partners &amp; Hospital Referrals ({partners.length})
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Manage recurring 20%–25% partner commissions, track referral link clicks, and approve converted hospitals.
+                </p>
+              </div>
+              <Link
+                href="/referrals"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Open Public Affiliate Portal <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            {partners.length === 0 ? (
+              <EmptyStateCard
+                title="No affiliate partners registered yet"
+                description="Partners and hospital admins who enroll via /referrals or their workspace appear here."
+              />
+            ) : (
+              <div className="space-y-4">
+                {partners.map((p) => (
+                  <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-bold text-slate-900">{p.name}</h3>
+                          <span className="rounded-lg bg-teal-50 border border-teal-200 px-2.5 py-0.5 font-mono text-xs font-bold text-teal-800">
+                            {p.referralCode}
+                          </span>
+                          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                            {p.commissionPercent}% Recurring
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-600">
+                          {p.companyOrClinic || 'Independent Partner'} · {p.email}
+                          {p.city ? ` · ${p.city}` : ''}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-4 text-xs">
+                        <div className="rounded-xl bg-slate-50 border border-slate-100 px-3.5 py-2 text-center">
+                          <div className="text-[10px] uppercase font-bold text-slate-400">Link Clicks</div>
+                          <div className="text-base font-extrabold text-slate-900">{p.clicksCount}</div>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 border border-slate-100 px-3.5 py-2 text-center">
+                          <div className="text-[10px] uppercase font-bold text-slate-400">Converted</div>
+                          <div className="text-base font-extrabold text-teal-700">{p.convertedCount}</div>
+                        </div>
+                        <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-3.5 py-2 text-center">
+                          <div className="text-[10px] uppercase font-bold text-emerald-700">Earned</div>
+                          <div className="text-base font-extrabold text-emerald-800">
+                            ₹{p.totalEarnedINR.toLocaleString('en-IN')}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {p.leads.length > 0 && (
+                      <div className="border-t border-slate-100 pt-3">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                          Referred Hospital Leads ({p.leads.length})
+                        </p>
+                        <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 bg-slate-50/60">
+                          {p.leads.map((lead) => (
+                            <div
+                              key={lead.id}
+                              className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5 text-xs"
+                            >
+                              <div>
+                                <span className="font-bold text-slate-900">{lead.referredClinicName}</span>
+                                <span className="ml-2 text-slate-500">
+                                  {lead.contactName} · {lead.contactPhone} · {lead.planInterested || 'Advance'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-slate-700">
+                                  Reward: ₹{lead.rewardAmountINR.toLocaleString('en-IN')}
+                                </span>
+                                {lead.status === 'converted' ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                                    <CheckCircle2 className="h-3 w-3" /> Credited
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleApproveReferralLead(lead.id, p.id, lead.rewardAmountINR)
+                                    }
+                                    className="rounded-lg bg-[#0f8a77] px-3 py-1 font-bold text-white hover:bg-[#0c7464]"
+                                  >
+                                    Approve &amp; Credit ₹{lead.rewardAmountINR.toLocaleString('en-IN')}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    <div className="flex gap-2">
-                      <input
-                        value={followUpNotes[inq.id] || ''}
-                        onChange={(e) =>
-                          setFollowUpNotes({ ...followUpNotes, [inq.id]: e.target.value })
-                        }
-                        placeholder="Add sales follow-up note..."
-                        className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
-                      />
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const note = (followUpNotes[inq.id] || '').trim()
-                          if (!note) return
-                          await fetch('/api/platform/inquiries', {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              id: inq.id,
-                              status: inq.status === 'new' ? 'follow_up' : inq.status,
-                              newFollowUpNote: note,
-                            }),
-                          })
-                          setFollowUpNotes({ ...followUpNotes, [inq.id]: '' })
-                          loadAll()
-                        }}
-                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                      >
-                        Save Note
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1123,11 +1512,8 @@ export default function PlatformAdminPage() {
                   <Search className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
                   <input
                     value={medQuery}
-                    onChange={(e) => {
-                      setMedQuery(e.target.value)
-                      loadAll(e.target.value)
-                    }}
-                    placeholder="Search brand, generic salt, category..."
+                    onChange={(e) => setMedQuery(e.target.value)}
+                    placeholder="Search brand, generic salt, category (debounced)..."
                     className="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2 text-xs focus:border-teal-500 focus:outline-none"
                   />
                 </div>
@@ -1656,6 +2042,48 @@ export default function PlatformAdminPage() {
           </div>
         </div>
       )}
+
+      {/* #19 DESTRUCTIVE ACTION PROTECTION MODALS */}
+      <ConfirmDestructiveModal
+        open={Boolean(deleteOrgTarget)}
+        title={`Delete Tenant "${deleteOrgTarget?.name || ''}"?`}
+        description={`This permanently removes "${deleteOrgTarget?.name || ''}" along with ${
+          deleteOrgTarget?.usage.patients ?? 0
+        } patient record(s), IPD admissions, prescriptions, and GST invoices.`}
+        confirmText="Multi-tenant isolation ensures no other hospital is affected, but this tenant's clinical records cannot be recovered."
+        requireExactMatch={deleteOrgTarget?.name}
+        confirmButtonLabel="Permanently Delete Clinic"
+        busy={destructiveBusy}
+        onConfirm={executeDeleteOrg}
+        onCancel={() => setDeleteOrgTarget(null)}
+      />
+
+      <ConfirmDestructiveModal
+        open={Boolean(deletePlanTarget)}
+        title={`Delete SaaS Plan "${deletePlanTarget?.name || ''}"?`}
+        description="Removing a public plan hides it from the SaaS Landing Page immediately. Existing subscribed hospitals cannot have their active plan deleted."
+        confirmButtonLabel="Delete Plan"
+        busy={destructiveBusy}
+        onConfirm={executeDeletePlan}
+        onCancel={() => setDeletePlanTarget(null)}
+      />
+
+      <ConfirmDestructiveModal
+        open={confirmBulkDeleteInquiries}
+        title={`Delete ${selectedInquiries.length} Selected Inquiries?`}
+        description="Selected demo requests and their sales follow-up notes will be permanently removed from the Platform Admin queue."
+        confirmButtonLabel={`Delete ${selectedInquiries.length} Inquiries`}
+        busy={destructiveBusy}
+        onConfirm={executeBulkDeleteInquiries}
+        onCancel={() => setConfirmBulkDeleteInquiries(false)}
+      />
+
+      {/* #20 NETWORK RECOVERY BANNER */}
+      <NetworkRecoveryBanner
+        isOnline={isOnline}
+        justRecovered={justRecovered}
+        onDismiss={dismissRecovery}
+      />
     </div>
   )
 }
