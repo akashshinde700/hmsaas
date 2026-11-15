@@ -340,6 +340,11 @@ model ClinicSettings {
   portalWelcomeMessage String?    // Custom message shown to patients on portal login
   // Pharmacy module toggle — org level (hide pharmacy for hospitals without pharmacy)
   pharmacyEnabled      Boolean    @default(false) // Org admin enables pharmacy inventory module
+  // WhatsApp integration — org level
+  whatsappEnabled      Boolean    @default(false) // Enable WhatsApp notifications
+  whatsappGatewayUrl   String?    // Self-hosted OpenWA / Evolution API URL
+  whatsappApiKey       String?    // Gateway API key
+  whatsappPhoneNumber  String?    // Hospital's registered WhatsApp number
   updatedAt           DateTime     @updatedAt
 }
 

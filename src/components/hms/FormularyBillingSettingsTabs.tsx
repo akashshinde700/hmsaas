@@ -10,6 +10,7 @@ import {
   Lock,
   Plus,
   Package,
+  Smartphone,
   Sparkles,
   Trash2,
   Users,
@@ -663,6 +664,10 @@ export function HospitalSettingsTab({
     patientPortalEnabled: false,
     portalWelcomeMessage: '',
     pharmacyEnabled: false,
+    whatsappEnabled: false,
+    whatsappGatewayUrl: '',
+    whatsappApiKey: '',
+    whatsappPhoneNumber: '',
   })
   const [orgPlan, setOrgPlan] = useState<{ name: string; tier: string; status: string } | null>(null)
   const [staff, setStaff] = useState<Array<Record<string, unknown>>>([])
@@ -844,6 +849,56 @@ export function HospitalSettingsTab({
           </div>
           <p className="text-[11px] text-teal-700 mb-0">
             अस्पताल के पास pharmacy न हो तो इसे OFF रखें। dashboard से Pharmacy tab hide हो जाएगा।
+          </p>
+        </div>
+
+        {/* WhatsApp Integration */}
+        <div className="rounded-xl border border-purple-200 bg-purple-50 p-3 mt-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
+                <Smartphone className="h-3 w-3" />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm">WhatsApp Notifications</h4>
+                <p className="text-[10px] text-purple-700">
+                  अपॉइंटमेंट रिमाइंडर, डिस्चार्ज समरी और लैब रिपोर्ट WhatsApp पर भेजें।
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSettings({ ...settings, whatsappEnabled: !settings.whatsappEnabled })}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 ${settings.whatsappEnabled ? 'bg-purple-600 border-purple-600' : 'bg-slate-200 border-slate-200'} transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-600`}
+              aria-pressed={settings.whatsappEnabled}
+            >
+              <span
+                className={`block h-5 w-5 rounded-full bg-white shadow-lg transition-transform ${settings.whatsappEnabled ? 'translate-x-5' : 'translate-x-0.5'}`}
+              />
+            </button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <SmartValidatedInput
+              label="Gateway URL (OpenWA / Evolution API)"
+              value={settings.whatsappGatewayUrl || ''}
+              onChange={(v) => setSettings({ ...settings, whatsappGatewayUrl: v })}
+              placeholder="https://wa-gateway.hospital.com"
+            />
+            <SmartValidatedInput
+              label="API Key"
+              value={settings.whatsappApiKey || ''}
+              onChange={(v) => setSettings({ ...settings, whatsappApiKey: v })}
+              placeholder="gateway-api-key"
+            />
+          </div>
+          <SmartValidatedInput
+            label="Hospital WhatsApp Number"
+            value={settings.whatsappPhoneNumber || ''}
+            onChange={(v) => setSettings({ ...settings, whatsappPhoneNumber: v })}
+            placeholder="+91 98765 43210"
+          />
+          <p className="text-[11px] text-purple-700 mb-0 mt-1">
+            OpenWA या Evolution API self-host करें। Hospital नंबर से QR स्कैन करके कनेक्ट करें।
           </p>
         </div>
 

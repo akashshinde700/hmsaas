@@ -17,6 +17,11 @@ export interface ClinicSettingsData {
   portalWelcomeMessage?: string | null
   // Pharmacy module toggle
   pharmacyEnabled?: boolean
+  // WhatsApp integration
+  whatsappEnabled?: boolean
+  whatsappGatewayUrl?: string | null
+  whatsappApiKey?: string | null
+  whatsappPhoneNumber?: string | null
 }
 
 export interface DoctorOption {

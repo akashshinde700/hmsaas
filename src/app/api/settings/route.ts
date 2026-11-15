@@ -162,6 +162,18 @@ export async function POST(req: NextRequest) {
       ...(typeof body.pharmacyEnabled === 'boolean'
         ? { pharmacyEnabled: body.pharmacyEnabled }
         : {}),
+      ...(typeof body.whatsappEnabled === 'boolean'
+        ? { whatsappEnabled: body.whatsappEnabled }
+        : {}),
+      ...(body.whatsappGatewayUrl
+        ? { whatsappGatewayUrl: String(body.whatsappGatewayUrl) }
+        : {}),
+      ...(body.whatsappApiKey
+        ? { whatsappApiKey: String(body.whatsappApiKey) }
+        : {}),
+      ...(body.whatsappPhoneNumber
+        ? { whatsappPhoneNumber: String(body.whatsappPhoneNumber) }
+        : {}),
     },
     create: {
       organizationId: orgId,
@@ -174,6 +186,18 @@ export async function POST(req: NextRequest) {
         : {}),
       ...(typeof body.pharmacyEnabled === 'boolean'
         ? { pharmacyEnabled: body.pharmacyEnabled }
+        : {}),
+      ...(typeof body.whatsappEnabled === 'boolean'
+        ? { whatsappEnabled: body.whatsappEnabled }
+        : {}),
+      ...(body.whatsappGatewayUrl
+        ? { whatsappGatewayUrl: String(body.whatsappGatewayUrl) }
+        : {}),
+      ...(body.whatsappApiKey
+        ? { whatsappApiKey: String(body.whatsappApiKey) }
+        : {}),
+      ...(body.whatsappPhoneNumber
+        ? { whatsappPhoneNumber: String(body.whatsappPhoneNumber) }
         : {}),
     },
   })
