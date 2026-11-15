@@ -25,7 +25,7 @@ export async function PATCH(
   const { quantity, sellingPrice, reorderLevel, orgId } = body
 
   const org = orgId || session.organizationId
-  if (org !== session.organizationId && session.role !== 'super_admin') {
+  if (org !== session.organizationId) {
     return apiJson({ error: 'Forbidden' }, { status: 403, startMs })
   }
 

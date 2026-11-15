@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   const lowStock = searchParams.get('lowStock') === '1'
   const medicineId = searchParams.get('medicineId') || undefined
 
-  if (orgId !== session.organizationId && session.role !== 'super_admin') {
+  if (orgId !== session.organizationId) {
     return apiJson({ error: 'Forbidden' }, { status: 403, startMs })
   }
 
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     return apiJson({ error: 'organizationId, medicineId, batchNo required.' }, { status: 400, startMs })
   }
 
-  if (organizationId !== session.organizationId && session.role !== 'super_admin') {
+  if (organizationId !== session.organizationId) {
     return apiJson({ error: 'Forbidden' }, { status: 403, startMs })
   }
 

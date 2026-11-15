@@ -45,12 +45,24 @@ export async function POST(req: NextRequest) {
   if (!session) return apiJson({ error: 'Unauthorized' }, { status: 401, startMs })
 
   const orgId = session.organizationId
+  // Do not rely on the role in an old session or on hidden navigation.
+  const currentUser = await db.user.findFirst({
+    where: { id: session.userId, organizationId: orgId, isActive: true },
+    select: { role: true },
+  })
+  if (!currentUser || !['admin', 'super_admin'].includes(currentUser.role.toLowerCase())) {
+    return apiJson({ error: 'Only organization administrators can change settings.' }, { status: 403, startMs })
+  }
   const body = await req.json()
   const action = String(body.action || 'updateBranding')
 
   if (action === 'addStaff' || action === 'createStaff') {
     const email = String(body.email || '').trim().toLowerCase()
     const name = String(body.name || '').trim()
+    const role = String(body.role || 'doctor').trim().toLowerCase()
+    if (!['admin', 'doctor', 'nurse', 'receptionist', 'pharmacist', 'billing'].includes(role)) {
+      return apiJson({ error: 'Invalid staff role.' }, { status: 400, startMs })
+    }
     if (!email || !name) {
       return apiJson({ error: 'Name and email are required.' }, { status: 400, startMs })
     }
@@ -69,20 +81,21 @@ export async function POST(req: NextRequest) {
         generatedPasswordEnc: encryptSecret(tempPassword),
         name,
         phone: body.phone ? String(body.phone) : null,
-        role: String(body.role || 'DOCTOR'),
+        role,
         specialization: body.specialization ? String(body.specialization) : null,
         qualification: body.qualification ? String(body.qualification) : null,
         registrationNo: body.registrationNo ? String(body.registrationNo) : null,
         consultationFee: Number(body.consultationFee || 500),
         takesConsultations:
-          String(body.role || '').toLowerCase() === 'doctor' || Boolean(body.takesConsultations),
-        ...(body.role === 'doctor'
+          role === 'doctor' || Boolean(body.takesConsultations),
+        ...(role === 'doctor'
           ? { portalAccessEnabled: Boolean(body.portalAccessEnabled) }
           : {}),
       },
     })
     invalidateCachePrefix(`dash:${orgId}`)
-    return apiJson({ user: created, temporaryPassword: tempPassword }, { status: 201, startMs })
+    const { password: _password, generatedPasswordEnc: _generatedPasswordEnc, ...safeUser } = created
+    return apiJson({ user: safeUser, temporaryPassword: tempPassword }, { status: 201, startMs })
   }
 
   if (action === 'completeOnboarding') {

@@ -336,17 +336,20 @@ export function OpdQueueTab({
             <form
               onSubmit={async (e) => {
                 e.preventDefault()
-                const res = await fetch('/api/opd', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'checkIn', ...checkInForm }),
-                })
-                if (res.ok) {
+                try {
+                  const res = await fetch('/api/opd', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'checkIn', ...checkInForm }),
+                  })
                   const d = await res.json()
+                  if (!res.ok) throw new Error(d.error || 'Could not issue OPD token.')
                   toast.success(`Issued OPD Token #${d.tokenNumber}`)
                   setShowCheckIn(false)
                   loadOpd()
                   onRefreshGlobal?.()
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : 'Could not issue OPD token.')
                 }
               }}
               className="mt-4 space-y-3 text-xs"
@@ -428,19 +431,26 @@ export function OpdQueueTab({
             <form
               onSubmit={async (e) => {
                 e.preventDefault()
-                await fetch('/api/opd', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    action: 'recordVitals',
-                    queueId: vitalsTarget.id,
-                    patientId: (vitalsTarget.patient as PatientRecord).id,
-                    ...vForm,
-                  }),
-                })
-                toast.success('Triage vitals recorded!')
-                setVitalsTarget(null)
-                loadOpd()
+                try {
+                  const res = await fetch('/api/opd', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'recordVitals',
+                      queueId: vitalsTarget.id,
+                      patientId: (vitalsTarget.patient as PatientRecord).id,
+                      ...vForm,
+                    }),
+                  })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error || 'Could not save triage vitals.')
+                  toast.success('Triage vitals recorded!')
+                  setVitalsTarget(null)
+                  loadOpd()
+                  onRefreshGlobal?.()
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : 'Could not save triage vitals.')
+                }
               }}
               className="mt-4 grid grid-cols-2 gap-3 text-xs"
             >

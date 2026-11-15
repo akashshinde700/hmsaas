@@ -68,14 +68,41 @@ export async function POST(req: NextRequest) {
     return apiJson({ ok: true }, { startMs })
   }
 
-  if (action === 'checkIn') {
+  // Validate related records on every creation path; foreign keys alone do not
+  // ensure that a patient, doctor or admission belongs to this tenant.
+  if (['checkIn', 'createToken', 'bookAppointment', 'recordVitals'].includes(action)) {
     const patientId = String(body.patientId || '')
     const patient = await db.patient.findFirst({
       where: { id: patientId, organizationId: session.organizationId },
+      select: { id: true },
     })
-    if (!patient) {
-      return apiJson({ error: 'Patient not found in this hospital.' }, { status: 404, startMs })
+    if (!patient) return apiJson({ error: 'Patient not found in this hospital.' }, { status: 404, startMs })
+
+    if (body.doctorId && action !== 'recordVitals') {
+      const doctor = await db.user.findFirst({
+        where: { id: String(body.doctorId), organizationId: session.organizationId, isActive: true },
+        select: { id: true },
+      })
+      if (!doctor) return apiJson({ error: 'Doctor not found in this hospital.' }, { status: 404, startMs })
     }
+    if (action === 'recordVitals' && body.queueId) {
+      const queue = await db.opdQueue.findFirst({
+        where: { id: String(body.queueId), patientId, organizationId: session.organizationId },
+        select: { id: true },
+      })
+      if (!queue) return apiJson({ error: 'Queue token not found for this patient.' }, { status: 404, startMs })
+    }
+    if (action === 'recordVitals' && body.ipdAdmissionId) {
+      const admission = await db.ipdAdmission.findFirst({
+        where: { id: String(body.ipdAdmissionId), patientId, organizationId: session.organizationId },
+        select: { id: true },
+      })
+      if (!admission) return apiJson({ error: 'Admission not found for this patient.' }, { status: 404, startMs })
+    }
+  }
+
+  if (action === 'checkIn') {
+    const patientId = String(body.patientId || '')
     const existingCount = await db.opdQueue.count({
       where: { organizationId: session.organizationId, queueDate: body.queueDate || new Date().toISOString().slice(0, 10) },
     })
@@ -150,6 +177,8 @@ export async function POST(req: NextRequest) {
     })
     return apiJson({ appointment: appt }, { status: 201, startMs })
   }
+
+  if (action !== 'createToken') return apiJson({ error: 'Unknown OPD action.' }, { status: 400, startMs })
 
   const queueDate = String(body.queueDate || new Date().toISOString().slice(0, 10))
   const existingCount = await db.opdQueue.count({

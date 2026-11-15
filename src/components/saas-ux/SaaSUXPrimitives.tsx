@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
+import React, { useId, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDown,
@@ -297,17 +297,19 @@ export function SmartValidatedInput({
   hint?: string
 }) {
   const [touched, setTouched] = useState(false)
+  const inputId = useId()
   const effectiveRules: ValidationRule[] = required && !rules.includes('required') ? ['required', ...rules] : rules
   const error = touched ? validateSmartField(value, effectiveRules) : null
   const isValid = touched && !error && value.trim().length > 0
 
   return (
     <div className={className}>
-      <label className="block text-xs font-bold text-slate-700 mb-1">
+      <label htmlFor={inputId} className="block text-xs font-bold text-slate-700 mb-1">
         {label} {required && <span className="text-rose-500">*</span>}
       </label>
       <div className="relative">
         <input
+          id={inputId}
           type={type}
           value={value}
           onBlur={() => setTouched(true)}
