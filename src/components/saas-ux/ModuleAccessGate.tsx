@@ -112,13 +112,14 @@ export function useSidebarModules(
   featuresJson?: string | null,
   organizationType?: string | null,
   hasIpdBeds?: boolean | null,
+  moduleVisibility?: Record<string, boolean> | null,
 ) {
   return useMemo(() => {
     if (!user) return []
     const planFeatures = parsePlanFeatures(featuresJson)
     const clinicModel = inferClinicModel(planFeatures, organizationType, hasIpdBeds)
-    return getAccessibleModules(user, planFeatures, clinicModel)
-  }, [user, featuresJson, organizationType, hasIpdBeds])
+    return getAccessibleModules(user, planFeatures, clinicModel, moduleVisibility)
+  }, [user, featuresJson, organizationType, hasIpdBeds, moduleVisibility])
 }
 
 /*

@@ -257,8 +257,29 @@ export default function HospitalDashboardPage() {
     return org?.type || null
   }, [sessionInfo])
 
-  // Accessible modules based on role + plan
-  const accessibleModules = useSidebarModules(user, planFeaturesJson, orgType)
+  // Parse org-level moduleVisibility from settings (hide/unhide per module)
+  const moduleVisibility = useMemo(() => {
+    if (!settings?.moduleVisibility) return null
+    try {
+      const parsed = JSON.parse(
+        typeof settings.moduleVisibility === 'string'
+          ? settings.moduleVisibility
+          : JSON.stringify(settings.moduleVisibility),
+      )
+      return parsed as Record<string, boolean>
+    } catch {
+      return null
+    }
+  }, [settings?.moduleVisibility])
+
+  // Accessible modules based on role + plan + org-level module visibility
+  const accessibleModules = useSidebarModules(
+    user,
+    planFeaturesJson,
+    orgType,
+    undefined,
+    moduleVisibility,
+  )
 
   // Filter NAV_ITEMS by access control + org-level module toggles
   const visibleNavItems = useMemo(() => {
@@ -266,11 +287,13 @@ export default function HospitalDashboardPage() {
     const accessibleIds = new Set(accessibleModules.map((m) => m.id))
     return NAV_ITEMS.filter((n) => {
       if (!accessibleIds.has(n.id)) return false
+      // Org-level module visibility gating (hide/unhide toggle)
+      if (n.id !== 'settings' && moduleVisibility && moduleVisibility[n.id] === false) return false
       // Pharmacy module is gated on org-level pharmacyEnabled toggle
       if (n.id === 'pharmacy' && !(settings?.pharmacyEnabled || false)) return false
       return true
     })
-  }, [user, accessibleModules, settings])
+  }, [user, accessibleModules, settings, moduleVisibility])
 
   // Auto-reset activeNav if current tab is no longer accessible
   useEffect(() => {
@@ -689,7 +712,7 @@ export default function HospitalDashboardPage() {
             <ErrorRecoveryBanner error={fetchError} onRetry={refreshCore} />
 
             {/* #15 Guided Onboarding Data Capture Banner when not yet completed */}
-            {settings && !settings.onboardingCompleted && activeNav === 'overview' && (
+            {settings && !settings.onboardingCompleted && activeNav === 'overview' && visibleNavItems.some((n) => n.id === 'overview') && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -749,6 +772,7 @@ export default function HospitalDashboardPage() {
               </motion.div>
             )}
 
+            {visibleNavItems.some((n) => n.id === activeNav) ? (
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeNav}
@@ -1185,6 +1209,11 @@ export default function HospitalDashboardPage() {
                 )}
               </motion.div>
             </AnimatePresence>
+            ) : user && visibleNavItems.length === 0 ? (
+              <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">
+                No dashboard modules are visible. Contact your administrator.
+              </p>
+            ) : null}
           </main>
         </div>
       </div>

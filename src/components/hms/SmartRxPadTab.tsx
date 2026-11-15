@@ -104,6 +104,566 @@ const MULTILINGUAL_ADVICE: Record<'en' | 'hi' | 'mr', string[]> = {
   ],
 }
 
+// -----------------------------------------------------------------------------
+// Speciality-wise Rx Pad templates
+// Default medicines, diagnosis chips, lab chips, advice templates & form labels
+// per doctor specialization. Falls back to General Medicine defaults.
+// -----------------------------------------------------------------------------
+export type RxSpeciality =
+  | 'General Medicine'
+  | 'Dental'
+  | 'Physiotherapy'
+  | 'Pathology'
+  | 'Laboratory'
+  | 'Fertility'
+  | 'IVF'
+  | 'Gynecology'
+  | 'Obstetrics'
+  | 'Cardiology'
+  | 'Pediatrics'
+  | 'Orthopedics'
+  | 'Dermatology'
+  | 'Ophthalmology'
+  | 'ENT'
+  | 'Neurology'
+  | 'Psychiatry'
+  | 'General Surgery'
+  | 'Multispecialty'
+  | string
+
+interface SpecialtyRxTemplate {
+  label: string
+  shortLabel: string
+  symptomChips: string[]
+  diagnosisChips: string[]
+  labChips: string[]
+  adviceTemplates: Record<'en' | 'hi' | 'mr', string[]>
+  defaultMedicines: Array<{
+    name: string
+    genericName: string
+    dosage: string
+    frequency: string
+    timing: string
+    duration: string
+    route: string
+    instructions: string
+  }>
+  formLabels: {
+    rxTitle: string
+    opdLabel: string
+    diagnosisLabel: string
+    adviceLabel: string
+  }
+}
+
+const DEFAULT_MEDS: SpecialtyRxTemplate['defaultMedicines'] = [
+  {
+    name: 'Paracetamol 500mg',
+    genericName: 'Paracetamol',
+    dosage: '1 tablet',
+    frequency: '1-0-1',
+    timing: 'After Food',
+    duration: '3 days',
+    route: 'Oral',
+    instructions: 'Take after food. Do not exceed 4 doses in 24 hours.',
+  },
+]
+
+const SPECIALTY_RX_TEMPLATES: Record<RxSpeciality, SpecialtyRxTemplate> = {
+  'General Medicine': {
+    label: 'General Medicine',
+    shortLabel: 'Gen Med',
+    symptomChips: SYMPTOM_CHIPS,
+    diagnosisChips: DIAGNOSIS_CHIPS,
+    labChips: LAB_CHIPS,
+    adviceTemplates: MULTILINGUAL_ADVICE,
+    defaultMedicines: [...DEFAULT_MEDS],
+    formLabels: {
+      rxTitle: 'Smart OPD Prescription Pad',
+      opdLabel: 'OPD Queue & Vitals',
+      diagnosisLabel: 'Clinical Diagnosis *',
+      adviceLabel: 'Dietary & Clinical Advice (Multilingual)',
+    },
+  },
+  Dental: {
+    label: 'Dental',
+    shortLabel: 'Dental',
+    symptomChips: [
+      'Toothache / dental pain',
+      'Bleeding gums',
+      'Swelling in jaw / cheek',
+      'Sensitivity to hot / cold',
+      'Broken or chipped tooth',
+    ],
+    diagnosisChips: ['Acute Pulpitis', 'Dental Caries', 'Gingivitis', 'Periapical Abscess', 'Periodontitis'],
+    labChips: ['OPG X-Ray', 'IOPA X-Ray', 'CBCT Scan'],
+    adviceTemplates: {
+      en: [
+        'Rinse mouth with warm salt water 3–4 times daily.',
+        'Avoid very hot, cold, sweet, or hard foods on the affected side.',
+        'Maintain gentle oral hygiene; use a soft-bristle toothbrush.',
+        'Apply cold compress to cheek for swelling (15 mins on/off).',
+        'Return immediately if fever, facial swelling, or difficulty swallowing occurs.',
+      ],
+      hi: [
+        'दिन में 3–4 बार गुनगुने नमक के पानी से कुल्ला करें।',
+        'प्रभावित तरफ बहुत गर्म, ठंडा, मीठा या सख्त खाना न खाएं।',
+        'नरम ब्रश से धीरे-धीरे ब्रश करें।',
+        'सूजन पर ठंडी सेंक लगाएं (15 मिनट पर/बंद)।',
+        'बुखार, चेहरे पर सूजन या निगलने में दिक्कत हो तो तुरंत डॉक्टर से संपर्क करें।',
+      ],
+      mr: [
+        'दिवसात ३–४ वेळा कोमट मिठाच्या पाण्याने तोंड धुवा.',
+        'घटित बाजूला खूप तापमान/कमाल तापमान, गोड किंवा कडक पदार्थ टाळा.',
+        'मुलायम ब्रशने हलक्या हाताने दात घासा.',
+        'सूजनवर थंड पट्टी लावा (१५ मिनिट चालू/बंद).',
+        'ताप, चेहऱ्यावर सूजन किंवा गिळण्यास अडचण येत असल्यास तत्काळ डॉक्टरांशी संपर्क साधा.',
+      ],
+    },
+    defaultMedicines: [
+      {
+        name: 'Amoxicillin 500mg',
+        genericName: 'Amoxicillin',
+        dosage: '1 capsule',
+        frequency: '1-1-1',
+        timing: 'After Food',
+        duration: '5 days',
+        route: 'Oral',
+        instructions: 'Take after food. Complete the full course even if pain subsides.',
+      },
+      {
+        name: 'Paracetamol 500mg',
+        genericName: 'Paracetamol',
+        dosage: '1 tablet',
+        frequency: '1-0-1',
+        timing: 'After Food',
+        duration: '3 days',
+        route: 'Oral',
+        instructions: 'Take for pain relief after food.',
+      },
+    ],
+    formLabels: {
+      rxTitle: 'Dental Rx Pad',
+      opdLabel: 'Dental OPD',
+      diagnosisLabel: 'Dental Diagnosis *',
+      adviceLabel: 'Post-Dental-Care Advice',
+    },
+  },
+  Physiotherapy: {
+    label: 'Physiotherapy',
+    shortLabel: 'Physio',
+    symptomChips: [
+      'Lower back pain',
+      'Neck stiffness',
+      'Knee joint pain',
+      'Shoulder pain / rotator cuff',
+      'Post-surgical stiffness',
+    ],
+    diagnosisChips: ['Lumbar Strain', 'Cervical Spondylosis', 'Osteoarthritis Knee', 'Frozen Shoulder', 'Post-Op Rehabilitation'],
+    labChips: ['X-Ray Lumbar Spine', 'MRI Knee', 'X-Ray Cervical Spine', 'USG Shoulder'],
+    adviceTemplates: {
+      en: [
+        'Apply ice pack to the affected area for 15–20 mins, 2–3 times daily.',
+        'Perform prescribed stretching exercises twice daily as demonstrated.',
+        'Avoid prolonged sitting / standing; change posture every 30 mins.',
+        'Use a firm mattress and avoid soft sofas for sleeping.',
+        'Do not lift heavy weights until advised by your physiotherapist.',
+      ],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [
+      {
+        name: 'Diclofenac 50mg',
+        genericName: 'Diclofenac',
+        dosage: '1 tablet',
+        frequency: '1-0-1',
+        timing: 'After Food',
+        duration: '5 days',
+        route: 'Oral',
+        instructions: 'Take after food. For inflammation and pain relief.',
+      },
+    ],
+    formLabels: {
+      rxTitle: 'Physio Rx Pad',
+      opdLabel: 'Physio Sessions',
+      diagnosisLabel: 'Physio Diagnosis *',
+      adviceLabel: 'Home Exercise Program',
+    },
+  },
+  Pathology: {
+    label: 'Pathology',
+    shortLabel: 'Path',
+    symptomChips: [],
+    diagnosisChips: [],
+    labChips: [
+      'CBC with ESR',
+      'Fasting & PP Blood Sugar',
+      'HbA1c',
+      'Lipid Profile',
+      'Liver Function Test (LFT)',
+      'Renal Function Test (RFT)',
+      'Thyroid Profile (TSH, T3, T4)',
+      'Vitamin D3 & B12',
+      'Urine Routine & Microscopy',
+      'Stool Routine',
+    ],
+    adviceTemplates: {
+      en: ['Fast 10–12 hours before blood tests (water allowed).', 'Collect morning mid-stream urine sample.', 'Bring previous lab reports for comparison.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Pathology Lab Requisition',
+      opdLabel: 'Lab Investigations',
+      diagnosisLabel: 'Clinical Indication *',
+      adviceLabel: 'Patient Instructions',
+    },
+  },
+  Laboratory: {
+    label: 'Laboratory',
+    shortLabel: 'Lab',
+    symptomChips: [],
+    diagnosisChips: [],
+    labChips: [
+      'CBC with ESR',
+      'Fasting & PP Blood Sugar',
+      'HbA1c',
+      'Lipid Profile',
+      'Liver Function Test (LFT)',
+      'Renal Function Test (RFT)',
+      'Thyroid Profile (TSH, T3, T4)',
+      'Vitamin D3 & B12',
+      'Urine Routine & Microscopy',
+      'Stool Routine',
+    ],
+    adviceTemplates: {
+      en: ['Fast 10–12 hours before blood tests (water allowed).', 'Collect morning mid-stream urine sample.', 'Bring previous lab reports for comparison.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Laboratory Requisition',
+      opdLabel: 'Lab Investigations',
+      diagnosisLabel: 'Clinical Indication *',
+      adviceLabel: 'Patient Instructions',
+    },
+  },
+  Fertility: {
+    label: 'Fertility',
+    shortLabel: 'Fertility',
+    symptomChips: ['Irregular menses', 'Difficulty conceiving', 'Pelvic pain', 'Hormonal imbalance'],
+    diagnosisChips: ['Anovulation', 'PCOS', 'Tubal Factor Infertility', 'Unexplained Infertility', 'Male Factor Infertility'],
+    labChips: ['AMH', 'TSH', 'Prolactin', 'Day 2 Follicular Scan', 'Semen Analysis', 'HSG'],
+    adviceTemplates: {
+      en: ['Track ovulation using basal body temperature or ovulation kits.', 'Take folic acid 400 mcg daily if planning conception.', 'Maintain healthy BMI; avoid smoking and alcohol.', 'Have timed intercourse during the fertile window.', 'Follow up in 2–3 menstrual cycles.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Fertility Rx Pad',
+      opdLabel: 'Fertility Consult',
+      diagnosisLabel: 'Fertility Diagnosis *',
+      adviceLabel: 'Lifestyle & Treatment Advice',
+    },
+  },
+  IVF: {
+    label: 'IVF',
+    shortLabel: 'IVF',
+    symptomChips: ['IVF cycle planning', 'Egg retrieval follow-up', 'Embryo transfer care', 'Hormonal stimulation'],
+    diagnosisChips: ['IVF Cycle', 'ICSI', 'Frozen Embryo Transfer', 'Ovarian Stimulation', 'Luteal Phase Support'],
+    labChips: ['AMH', 'Estradiol (E2)', 'Progesterone', 'Follicular Scan', 'Semen Analysis', 'hCG Beta'],
+    adviceTemplates: {
+      en: ['Take all prescribed hormones exactly on time.', 'Avoid heavy exercise and intercourse during stimulation phase.', 'Attend all monitoring scans and blood tests.', 'Rest after embryo transfer as advised.', 'Call clinic immediately for heavy bleeding or severe pain.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'IVF Protocol Pad',
+      opdLabel: 'IVF Consult',
+      diagnosisLabel: 'IVF Diagnosis *',
+      adviceLabel: 'IVF Cycle Instructions',
+    },
+  },
+  Gynecology: {
+    label: 'Gynecology',
+    shortLabel: 'Gyn',
+    symptomChips: ['Irregular periods', 'Pelvic pain', 'White discharge', 'Menopausal symptoms', 'Breast lump'],
+    diagnosisChips: ['PCOS', 'Dysmenorrhea', 'Menorrhagia', 'Urinary Tract Infection', 'Menopause'],
+    labChips: ['USG Pelvis', 'Pap Smear', 'Thyroid Profile', 'Hb', 'Urine Routine', 'Hormone Panel'],
+    adviceTemplates: {
+      en: ['Maintain menstrual hygiene; change pads every 4–6 hours.', 'Avoid douching and scented feminine products.', 'Take iron and calcium supplements as prescribed.', 'Annual Pap smear after age 30.', 'Report heavy bleeding or post-menopausal bleeding immediately.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Obs/Gyn Rx Pad',
+      opdLabel: 'Gyn OPD',
+      diagnosisLabel: 'Gyn Diagnosis *',
+      adviceLabel: 'Women’s Health Advice',
+    },
+  },
+  Obstetrics: {
+    label: 'Obstetrics',
+    shortLabel: 'Obs',
+    symptomChips: ['Morning sickness', 'Fetal movement', 'Backache in pregnancy', 'Swollen feet', 'Prenatal checkup'],
+    diagnosisChips: ['Antenatal Care', 'Gestational Diabetes', 'Pregnancy-Induced Hypertension', 'Anemia in Pregnancy', 'Normal Delivery'],
+    labChips: ['NT Scan', 'Anomaly Scan', 'Glucose Challenge Test', 'Hb', 'Urine Routine', 'Blood Group & Rh'],
+    adviceTemplates: {
+      en: ['Take prenatal vitamins with folic acid daily.', 'Avoid alcohol, smoking, and unpasteurized dairy.', 'Sleep on your left side; stay hydrated.', 'Attend all scheduled antenatal visits.', 'Call immediately for decreased fetal movement or bleeding.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Obstetrics Rx Pad',
+      opdLabel: 'Obs OPD',
+      diagnosisLabel: 'Obstetric Diagnosis *',
+      adviceLabel: 'Pregnancy Care Advice',
+    },
+  },
+  Cardiology: {
+    label: 'Cardiology',
+    shortLabel: 'Cardio',
+    symptomChips: ['Chest pain', 'Palpitations', 'Shortness of breath', 'Dizziness / fainting', 'Leg swelling'],
+    diagnosisChips: ['Essential Hypertension', 'Stable Angina', 'Atrial Fibrillation', 'Heart Failure', 'Post-MI Follow-up'],
+    labChips: ['12-Lead ECG', 'Echocardiogram', 'Lipid Profile', 'Troponin', 'BNP', 'HbA1c'],
+    adviceTemplates: {
+      en: ['Restrict salt to <4 g/day; avoid pickles and papad.', 'Take BP medicines at the same time daily.', 'Walk 30 minutes daily; avoid strenuous exertion.', 'Avoid smoking and alcohol completely.', 'Monitor BP and pulse daily; maintain a log.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [
+      {
+        name: 'Amlodipine 5mg',
+        genericName: 'Amlodipine',
+        dosage: '1 tablet',
+        frequency: '1-0-0',
+        timing: 'Morning',
+        duration: '30 days',
+        route: 'Oral',
+        instructions: 'Take once daily in the morning. Monitor for ankle swelling.',
+      },
+      {
+        name: 'Atorvastatin 10mg',
+        genericName: 'Atorvastatin',
+        dosage: '1 tablet',
+        frequency: '1-0-0',
+        timing: 'At Bedtime',
+        duration: '30 days',
+        route: 'Oral',
+        instructions: 'Take at bedtime. Avoid grapefruit juice.',
+      },
+    ],
+    formLabels: {
+      rxTitle: 'Cardiology Rx Pad',
+      opdLabel: 'Cardio OPD',
+      diagnosisLabel: 'Cardiac Diagnosis *',
+      adviceLabel: 'Cardiac Lifestyle Advice',
+    },
+  },
+  Pediatrics: {
+    label: 'Pediatrics',
+    shortLabel: 'Peds',
+    symptomChips: ['Fever in child', 'Cough & cold', 'Loose stools', 'Poor feeding', 'Rash / allergy'],
+    diagnosisChips: ['Acute Viral Fever', 'Acute Otitis Media', 'Acute Gastroenteritis', 'Bronchiolitis', 'Urinary Tract Infection'],
+    labChips: ['CBC', 'Urine Routine', 'CRP', 'Blood Culture', 'Throat Swab'],
+    adviceTemplates: {
+      en: ['Give ORS after every loose stool.', 'Continue breastfeeding / regular feeds.', 'Paracetamol dose as per weight (15 mg/kg).', 'Sponge with lukewarm water for fever.', 'Return urgently if child is lethargic or not feeding.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [
+      {
+        name: 'Paracetamol 125mg/5ml',
+        genericName: 'Paracetamol',
+        dosage: '5 ml',
+        frequency: '1-0-1',
+        timing: 'After Food',
+        duration: '3 days',
+        route: 'Oral',
+        instructions: 'Dose as per child weight (15 mg/kg). Max 4 doses/day.',
+      },
+    ],
+    formLabels: {
+      rxTitle: 'Pediatrics Rx Pad',
+      opdLabel: 'Peds OPD',
+      diagnosisLabel: 'Pediatric Diagnosis *',
+      adviceLabel: 'Child Care Advice',
+    },
+  },
+  Orthopedics: {
+    label: 'Orthopedics',
+    shortLabel: 'Ortho',
+    symptomChips: ['Joint pain', 'Back pain', 'Fracture pain', 'Sprain / strain', 'Arthritis pain'],
+    diagnosisChips: ['Osteoarthritis', 'Fracture', 'Sprain', 'Cervical Spondylosis', 'Lumbar Disc Prolapse'],
+    labChips: ['X-Ray Affected Joint', 'MRI Spine', 'Uric Acid', 'Vitamin D3', 'Calcium'],
+    adviceTemplates: {
+      en: ['Apply cold compress for acute injury; warm compress for chronic pain.', 'Avoid heavy lifting and prolonged standing.', 'Use ergonomic chair and mattress.', 'Do prescribed physiotherapy exercises daily.', 'Elevate the limb to reduce swelling.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Orthopedics Rx Pad',
+      opdLabel: 'Ortho OPD',
+      diagnosisLabel: 'Orthopedic Diagnosis *',
+      adviceLabel: 'Musculoskeletal Advice',
+    },
+  },
+  Dermatology: {
+    label: 'Dermatology',
+    shortLabel: 'Derma',
+    symptomChips: ['Skin rash', 'Itching', 'Acne', 'Eczema flare', 'Hair fall'],
+    diagnosisChips: ['Atopic Dermatitis', 'Acne Vulgaris', 'Psoriasis', 'Fungal Infection', 'Urticaria'],
+    labChips: ['KOH Scraping', 'Skin Biopsy', 'Patch Test', 'IgE Total'],
+    adviceTemplates: {
+      en: ['Use fragrance-free moisturizer twice daily.', 'Avoid scratching; keep nails short.', 'Use mild, soap-free cleanser.', 'Apply sunscreen SPF 30+ before going out.', 'Avoid known triggers and allergens.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Dermatology Rx Pad',
+      opdLabel: 'Derma OPD',
+      diagnosisLabel: 'Skin Diagnosis *',
+      adviceLabel: 'Skin Care Advice',
+    },
+  },
+  Ophthalmology: {
+    label: 'Ophthalmology',
+    shortLabel: 'Eye',
+    symptomChips: ['Blurred vision', 'Eye redness', 'Eye pain', 'Watering', 'Double vision'],
+    diagnosisChips: ['Refractive Error', 'Conjunctivitis', 'Cataract', 'Glaucoma Suspect', 'Dry Eye Syndrome'],
+    labChips: ['Visual Acuity Test', 'Slit Lamp Exam', 'Intraocular Pressure', 'Fundus Exam', 'Refraction'],
+    adviceTemplates: {
+      en: ['Wear prescribed glasses regularly.', 'Use lubricant eye drops as advised.', 'Take 20-20-20 breaks during screen use.', 'Avoid rubbing your eyes.', 'Wear sunglasses outdoors.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Ophthalmology Rx Pad',
+      opdLabel: 'Eye OPD',
+      diagnosisLabel: 'Eye Diagnosis *',
+      adviceLabel: 'Eye Care Advice',
+    },
+  },
+  ENT: {
+    label: 'ENT',
+    shortLabel: 'ENT',
+    symptomChips: ['Sore throat', 'Ear pain', 'Nasal congestion', 'Tinnitus', 'Hoarseness'],
+    diagnosisChips: ['Tonsillitis', 'Otitis Media', 'Sinusitis', 'Allergic Rhinitis', 'Pharyngitis'],
+    labChips: ['Throat Swab', 'Pneumatic Otoscopy', 'Audiometry', 'X-Ray Paranasal Sinuses'],
+    adviceTemplates: {
+      en: ['Gargle with warm salt water 3–4 times daily.', 'Avoid cold drinks and ice cream.', 'Use steam inhalation for nasal congestion.', 'Do not insert ear buds into the ear canal.', 'Avoid smoking and secondhand smoke.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'ENT Rx Pad',
+      opdLabel: 'ENT OPD',
+      diagnosisLabel: 'ENT Diagnosis *',
+      adviceLabel: 'ENT Care Advice',
+    },
+  },
+  Neurology: {
+    label: 'Neurology',
+    shortLabel: 'Neuro',
+    symptomChips: ['Headache', 'Dizziness', 'Numbness / tingling', 'Memory loss', 'Seizure'],
+    diagnosisChips: ['Migraine', 'Tension Headache', 'Epilepsy', 'Stroke / TIA', 'Peripheral Neuropathy'],
+    labChips: ['MRI Brain', 'CT Head', 'EEG', 'Nerve Conduction Study', 'Vitamin B12'],
+    adviceTemplates: {
+      en: ['Maintain regular sleep-wake cycle.', 'Avoid known migraine triggers (cheese, chocolate, caffeine).', 'Take antiepileptic medicines exactly on time.', 'Avoid driving if you have seizures.', 'Keep a headache diary.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Neurology Rx Pad',
+      opdLabel: 'Neuro OPD',
+      diagnosisLabel: 'Neurological Diagnosis *',
+      adviceLabel: 'Neuro Care Advice',
+    },
+  },
+  Psychiatry: {
+    label: 'Psychiatry',
+    shortLabel: 'Psych',
+    symptomChips: ['Anxiety', 'Depression', 'Insomnia', 'Mood swings', 'Panic attacks'],
+    diagnosisChips: ['Generalized Anxiety Disorder', 'Major Depressive Disorder', 'Obsessive Compulsive Disorder', 'Panic Disorder', 'Bipolar Disorder'],
+    labChips: ['Thyroid Profile', 'Vitamin B12', 'Vitamin D', 'Hb', 'Fasting Blood Sugar'],
+    adviceTemplates: {
+      en: ['Practice deep breathing / mindfulness daily.', 'Maintain regular sleep and meal times.', 'Avoid alcohol and recreational drugs.', 'Engage in light exercise or walking.', 'Attend therapy sessions regularly.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Psychiatry Rx Pad',
+      opdLabel: 'Psych OPD',
+      diagnosisLabel: 'Psychiatric Diagnosis *',
+      adviceLabel: 'Mental Health Advice',
+    },
+  },
+  'General Surgery': {
+    label: 'General Surgery',
+    shortLabel: 'Surgery',
+    symptomChips: ['Abdominal pain', 'Hernia', 'Gallbladder pain', 'Varicose veins', 'Post-surgical wound'],
+    diagnosisChips: ['Appendicitis', 'Hernia', 'Gallstones', 'Varicose Veins', 'Post-Op Wound Care'],
+    labChips: ['USG Abdomen', 'CBC', 'LFT', 'PT INR', 'Blood Group & Rh'],
+    adviceTemplates: {
+      en: ['Keep surgical wound clean and dry.', 'Avoid heavy lifting for 4–6 weeks.', 'Take pain medicines as prescribed.', 'Walk short distances to prevent clot formation.', 'Attend follow-up for suture removal.'],
+      hi: [],
+      mr: [],
+    },
+    defaultMedicines: [],
+    formLabels: {
+      rxTitle: 'Surgery Rx Pad',
+      opdLabel: 'Surgery OPD',
+      diagnosisLabel: 'Surgical Diagnosis *',
+      adviceLabel: 'Post-Op Care Advice',
+    },
+  },
+  Multispecialty: {
+    label: 'Multispecialty',
+    shortLabel: 'Multi',
+    symptomChips: SYMPTOM_CHIPS,
+    diagnosisChips: DIAGNOSIS_CHIPS,
+    labChips: LAB_CHIPS,
+    adviceTemplates: MULTILINGUAL_ADVICE,
+    defaultMedicines: [...DEFAULT_MEDS],
+    formLabels: {
+      rxTitle: 'Smart OPD Prescription Pad',
+      opdLabel: 'OPD Queue & Vitals',
+      diagnosisLabel: 'Clinical Diagnosis *',
+      adviceLabel: 'Dietary & Clinical Advice (Multilingual)',
+    },
+  },
+}
+
+// Staff specialties are free text; handle common aliases without guessing
+// unknown specialties. Clinicians still select and review all suggestions.
+function specialtyKey(value: string | null | undefined): string {
+  const name = (value || '').toLowerCase()
+  const aliases: Array<[RegExp, string]> = [
+    [/dent|oral/, 'Dental'], [/physio/, 'Physiotherapy'],
+    [/patholog/, 'Pathology'], [/laborator/, 'Laboratory'],
+    [/fertility/, 'Fertility'], [/\bivf\b/, 'IVF'],
+    [/gyn[ae]+c|obstet/, 'Gynecology'], [/cardio/, 'Cardiology'],
+    [/p[ae]+diatr|neonat/, 'Pediatrics'], [/ortho/, 'Orthopedics'],
+    [/dermat/, 'Dermatology'], [/ophthalm|eye/, 'Ophthalmology'],
+    [/\bent\b/, 'ENT'], [/neurolog/, 'Neurology'], [/psychiatr/, 'Psychiatry'],
+    [/general surg/, 'General Surgery'],
+  ]
+  return aliases.find(([pattern]) => pattern.test(name))?.[1] || 'General Medicine'
+}
+
 export default function SmartRxPadTab({
   patients,
   doctors,
@@ -132,6 +692,11 @@ export default function SmartRxPadTab({
   const [recommendIpdAdmit, setRecommendIpdAdmit] = useState(false)
   const [generateOpdBill, setGenerateOpdBill] = useState(true)
   const [markBillPaid, setMarkBillPaid] = useState(true)
+
+  // Speciality-wise template resolution based on the selected consulting doctor
+  const selectedDoctor = doctors.find((d) => d.id === doctorId)
+  const specialtyTemplate = SPECIALTY_RX_TEMPLATES[specialtyKey(selectedDoctor?.specialization)] ||
+    SPECIALTY_RX_TEMPLATES['General Medicine']
 
   const [vitals, setVitals] = useState({
     bp: '120/80',
@@ -314,9 +879,9 @@ export default function SmartRxPadTab({
                 <Sparkles className="h-4 w-4" />
               </div>
               <div>
-                <h2 className="text-base font-bold text-slate-900">Smart OPD Prescription Pad</h2>
+                <h2 className="text-base font-bold text-slate-900">{specialtyTemplate.formLabels.rxTitle}</h2>
                 <p className="text-xs text-slate-500">
-                  Debounced MedWiki Drug Search · Autosave Draft · Per-Doctor Dosing Memory
+                  {specialtyTemplate.shortLabel} · Debounced MedWiki Drug Search · Autosave Draft · Per-Doctor Dosing Memory
                 </p>
               </div>
             </div>
@@ -452,7 +1017,7 @@ export default function SmartRxPadTab({
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
               />
               <div className="mt-1.5 flex flex-wrap gap-1">
-                {SYMPTOM_CHIPS.slice(0, 5).map((chip) => (
+                {specialtyTemplate.symptomChips.slice(0, 5).map((chip) => (
                   <button
                     key={chip}
                     type="button"
@@ -469,7 +1034,7 @@ export default function SmartRxPadTab({
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                Clinical Diagnosis *
+                {specialtyTemplate.formLabels.diagnosisLabel}
               </label>
               <input
                 required
@@ -481,7 +1046,7 @@ export default function SmartRxPadTab({
                 }`}
               />
               <div className="mt-1.5 flex flex-wrap gap-1">
-                {DIAGNOSIS_CHIPS.slice(0, 5).map((chip) => (
+                {specialtyTemplate.diagnosisChips.slice(0, 5).map((chip) => (
                   <button
                     key={chip}
                     type="button"
@@ -662,7 +1227,7 @@ export default function SmartRxPadTab({
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
             <div className="mt-1.5 flex flex-wrap gap-1">
-              {LAB_CHIPS.map((lab) => (
+              {specialtyTemplate.labChips.map((lab) => (
                 <button
                   key={lab}
                   type="button"
@@ -680,7 +1245,7 @@ export default function SmartRxPadTab({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                Dietary &amp; Clinical Advice (Multilingual)
+                {specialtyTemplate.formLabels.adviceLabel}
               </label>
               <div className="inline-flex rounded-lg border border-slate-200 p-0.5 text-xs">
                 {(
@@ -712,7 +1277,7 @@ export default function SmartRxPadTab({
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
             <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {MULTILINGUAL_ADVICE[adviceLang].map((line, i) => (
+              {specialtyTemplate.adviceTemplates[adviceLang].map((line, i) => (
                 <button
                   key={i}
                   type="button"

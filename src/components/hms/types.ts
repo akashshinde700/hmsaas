@@ -22,6 +22,8 @@ export interface ClinicSettingsData {
   whatsappGatewayUrl?: string | null
   whatsappApiKey?: string | null
   whatsappPhoneNumber?: string | null
+  // Module hide/unhide visibility (org-level toggle per dashboard module)
+  moduleVisibility?: Record<string, boolean> | null
 }
 
 export interface DoctorOption {
