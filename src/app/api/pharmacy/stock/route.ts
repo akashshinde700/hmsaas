@@ -30,6 +30,15 @@ export async function GET(req: NextRequest) {
     return apiJson({ error: 'Forbidden' }, { status: 403, startMs })
   }
 
+  // Pharmacy module gate — org-level toggle
+  const clinicSettings = await dbUnscoped.clinicSettings.findUnique({
+    where: { organizationId: orgId },
+    select: { pharmacyEnabled: true },
+  })
+  if (!clinicSettings?.pharmacyEnabled) {
+    return apiJson({ error: 'Pharmacy module is not enabled for this organization.' }, { status: 403, startMs })
+  }
+
   const where: any = {
     organizationId: orgId,
     isActive: true,

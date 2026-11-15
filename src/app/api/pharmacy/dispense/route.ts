@@ -29,6 +29,15 @@ export async function POST(req: NextRequest) {
     return apiJson({ error: 'Forbidden' }, { status: 403, startMs })
   }
 
+  // Pharmacy module gate — org-level toggle
+  const clinicSettings = await dbUnscoped.clinicSettings.findUnique({
+    where: { organizationId: organizationId },
+    select: { pharmacyEnabled: true },
+  })
+  if (!clinicSettings?.pharmacyEnabled) {
+    return apiJson({ error: 'Pharmacy module is not enabled for this organization.' }, { status: 403, startMs })
+  }
+
   // Verify stock exists and has enough quantity
   const stock = await dbUnscoped.pharmacyStock.findUnique({ where: { id: pharmacyStockId } })
   if (!stock || stock.organizationId !== organizationId || !stock.isActive) {

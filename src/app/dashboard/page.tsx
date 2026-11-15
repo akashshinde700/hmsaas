@@ -258,12 +258,17 @@ export default function HospitalDashboardPage() {
   // Accessible modules based on role + plan
   const accessibleModules = useSidebarModules(user, planFeaturesJson, orgType)
 
-  // Filter NAV_ITEMS by access control
+  // Filter NAV_ITEMS by access control + org-level module toggles
   const visibleNavItems = useMemo(() => {
     if (!user) return []
     const accessibleIds = new Set(accessibleModules.map((m) => m.id))
-    return NAV_ITEMS.filter((n) => accessibleIds.has(n.id))
-  }, [user, accessibleModules])
+    return NAV_ITEMS.filter((n) => {
+      if (!accessibleIds.has(n.id)) return false
+      // Pharmacy module is gated on org-level pharmacyEnabled toggle
+      if (n.id === 'pharmacy' && !(settings?.pharmacyEnabled || false)) return false
+      return true
+    })
+  }, [user, accessibleModules, settings])
 
   // Auto-reset activeNav if current tab is no longer accessible
   useEffect(() => {

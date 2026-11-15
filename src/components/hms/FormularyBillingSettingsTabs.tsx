@@ -9,6 +9,7 @@ import {
   FlaskConical,
   Lock,
   Plus,
+  Package,
   Sparkles,
   Trash2,
   Users,
@@ -661,6 +662,7 @@ export function HospitalSettingsTab({
     rxFooterNote: '',
     patientPortalEnabled: false,
     portalWelcomeMessage: '',
+    pharmacyEnabled: false,
   })
   const [orgPlan, setOrgPlan] = useState<{ name: string; tier: string; status: string } | null>(null)
   const [staff, setStaff] = useState<Array<Record<string, unknown>>>([])
@@ -813,6 +815,36 @@ export function HospitalSettingsTab({
             onChange={(v) => setSettings({ ...settings, portalWelcomeMessage: v })}
             placeholder="Welcome to our patient portal..."
           />
+        </div>
+
+        {/* Pharmacy Module Toggle */}
+        <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 mt-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
+                <Package className="h-3 w-3" />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm">Pharmacy Inventory Module</h4>
+                <p className="text-[10px] text-teal-700">
+                  ऑन करने पर ही डैशबोर्ड में Pharmacy Stock tab दिखेगा।
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSettings({ ...settings, pharmacyEnabled: !settings.pharmacyEnabled })}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 ${settings.pharmacyEnabled ? 'bg-teal-600 border-teal-600' : 'bg-slate-200 border-slate-200'} transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600`}
+              aria-pressed={settings.pharmacyEnabled}
+            >
+              <span
+                className={`block h-5 w-5 rounded-full bg-white shadow-lg transition-transform ${settings.pharmacyEnabled ? 'translate-x-5' : 'translate-x-0.5'}`}
+              />
+            </button>
+          </div>
+          <p className="text-[11px] text-teal-700 mb-0">
+            अस्पताल के पास pharmacy न हो तो इसे OFF रखें। dashboard से Pharmacy tab hide हो जाएगा।
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2">

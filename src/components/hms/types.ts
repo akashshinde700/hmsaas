@@ -15,6 +15,8 @@ export interface ClinicSettingsData {
   // Patient Portal access control
   patientPortalEnabled?: boolean
   portalWelcomeMessage?: string | null
+  // Pharmacy module toggle
+  pharmacyEnabled?: boolean
 }
 
 export interface DoctorOption {

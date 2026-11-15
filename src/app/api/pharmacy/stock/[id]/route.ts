@@ -29,6 +29,15 @@ export async function PATCH(
     return apiJson({ error: 'Forbidden' }, { status: 403, startMs })
   }
 
+  // Pharmacy module gate — org-level toggle
+  const clinicSettings = await dbUnscoped.clinicSettings.findUnique({
+    where: { organizationId: org },
+    select: { pharmacyEnabled: true },
+  })
+  if (!clinicSettings?.pharmacyEnabled) {
+    return apiJson({ error: 'Pharmacy module is not enabled for this organization.' }, { status: 403, startMs })
+  }
+
   const existing = await dbUnscoped.pharmacyStock.findUnique({ where: { id } })
   if (!existing || existing.organizationId !== org) {
     return apiJson({ error: 'Stock not found.' }, { status: 404, startMs })

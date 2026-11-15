@@ -338,6 +338,8 @@ model ClinicSettings {
   // Patient Portal access control — org level
   patientPortalEnabled Boolean    @default(false) // Org admin enables portal for their patients
   portalWelcomeMessage String?    // Custom message shown to patients on portal login
+  // Pharmacy module toggle — org level (hide pharmacy for hospitals without pharmacy)
+  pharmacyEnabled      Boolean    @default(false) // Org admin enables pharmacy inventory module
   updatedAt           DateTime     @updatedAt
 }
 

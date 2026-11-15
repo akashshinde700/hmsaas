@@ -159,6 +159,9 @@ export async function POST(req: NextRequest) {
       ...(body.portalWelcomeMessage
         ? { portalWelcomeMessage: String(body.portalWelcomeMessage) }
         : {}),
+      ...(typeof body.pharmacyEnabled === 'boolean'
+        ? { pharmacyEnabled: body.pharmacyEnabled }
+        : {}),
     },
     create: {
       organizationId: orgId,
@@ -168,6 +171,9 @@ export async function POST(req: NextRequest) {
         : {}),
       ...(body.portalWelcomeMessage
         ? { portalWelcomeMessage: String(body.portalWelcomeMessage) }
+        : {}),
+      ...(typeof body.pharmacyEnabled === 'boolean'
+        ? { pharmacyEnabled: body.pharmacyEnabled }
         : {}),
     },
   })
