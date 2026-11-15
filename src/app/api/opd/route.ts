@@ -10,10 +10,17 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const queueDate = searchParams.get('date') || new Date().toISOString().slice(0, 10)
+  const speciality = searchParams.get('speciality') || undefined
 
   const [queue, appointments] = await Promise.all([
     db.opdQueue.findMany({
-      where: { organizationId: session.organizationId, queueDate },
+      where: {
+        organizationId: session.organizationId,
+        queueDate,
+        ...(speciality
+          ? { doctor: { specialization: { contains: speciality } } }
+          : {}),
+      },
       include: {
         patient: {
           include: {
