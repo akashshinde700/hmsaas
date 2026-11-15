@@ -7,6 +7,9 @@ test.describe('Hospital Dashboard Modules', () => {
     await page.getByLabel(/password/i).fill('Sahyadri@123');
     await page.getByRole('button', { name: /sign in|login/i }).click();
     await expect(page).toHaveURL('/dashboard');
+    await expect(page.getByRole('heading', { name: 'Command Overview' })).toBeVisible();
+    // Wait for the dashboard's keyboard listener to be attached after hydration.
+    await page.waitForTimeout(300);
   });
 
   test('Dashboard overview shows KPI cards and bento grid', async ({ page }) => {
@@ -14,6 +17,11 @@ test.describe('Hospital Dashboard Modules', () => {
     await expect(page.getByText(/IPD Ward Occupancy/i)).toBeVisible();
     await expect(page.getByText(/Collected Revenue/i)).toBeVisible();
     await expect(page.getByText(/MedWiki Drug Catalog/i)).toBeVisible();
+  });
+
+  test('Overview KPI card opens its module', async ({ page }) => {
+    await page.getByRole('button', { name: /OPD Queue Today/ }).click();
+    await expect(page.getByText(/Live OPD Token Queue/i)).toBeVisible();
   });
 
   test('Keyboard shortcut Alt+2 navigates to OPD Queue', async ({ page }) => {
@@ -28,17 +36,17 @@ test.describe('Hospital Dashboard Modules', () => {
 
   test('Keyboard shortcut Alt+4 navigates to IPD Ward Board', async ({ page }) => {
     await page.keyboard.press('Alt+4');
-    await expect(page.getByText(/In-Patient Department/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'IPD & Bed Board' })).toBeVisible();
   });
 
   test('Keyboard shortcut Alt+5 navigates to Patients directory', async ({ page }) => {
     await page.keyboard.press('Alt+5');
-    await expect(page.getByText(/Patients \(UHID\)/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Patients (UHID)' })).toBeVisible();
   });
 
   test('Keyboard shortcut Alt+6 navigates to Medicine Formulary', async ({ page }) => {
     await page.keyboard.press('Alt+6');
-    await expect(page.getByText(/Global MedWiki Formulary/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Medicine Formulary' })).toBeVisible();
   });
 
   test('Keyboard shortcut Alt+7 navigates to Lab & Billing', async ({ page }) => {
@@ -48,12 +56,12 @@ test.describe('Hospital Dashboard Modules', () => {
 
   test('Keyboard shortcut Alt+8 navigates to Refer & Earn', async ({ page }) => {
     await page.keyboard.press('Alt+8');
-    await expect(page.getByText(/Refer & Earn/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Refer & Earn', exact: true })).toBeVisible();
   });
 
   test('Keyboard shortcut Alt+9 navigates to Hospital Settings', async ({ page }) => {
     await page.keyboard.press('Alt+9');
-    await expect(page.getByText(/White-Label Letterhead/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Hospital Settings' })).toBeVisible();
   });
 
   test('Command palette opens with ⌘K / Ctrl+K', async ({ page }) => {
@@ -84,15 +92,16 @@ test.describe('Hospital Dashboard Modules', () => {
 
   test('OPD Queue shows tokens with status filters', async ({ page }) => {
     await page.keyboard.press('Alt+2');
-    await expect(page.getByText(/Token #/i)).toBeVisible();
+    await expect(page.getByText(/Token #/i).first()).toBeVisible();
     await page.getByRole('button', { name: /Waiting/i }).click();
   });
 
   test('Smart Rx Pad allows adding medicine from MedWiki search', async ({ page }) => {
     await page.keyboard.press('Alt+3');
     await page.getByPlaceholder(/Search MedWiki/i).fill('Dolo');
-    await page.getByText(/Dolo/i).first().click();
-    await expect(page.getByText(/Dolo/i)).toBeVisible();
+    await page.getByRole('button', { name: /Dolo 650 Tablet/ }).click();
+    await expect(page.getByRole('heading', { name: 'Rx Medications (1)' })).toBeVisible();
+    await expect(page.locator('tbody').getByText('Dolo 650 Tablet', { exact: true })).toBeVisible();
   });
 
   test('IPD Ward Board shows beds with occupancy status', async ({ page }) => {
@@ -103,12 +112,12 @@ test.describe('Hospital Dashboard Modules', () => {
 
   test('Patient directory shows UHID table with filters', async ({ page }) => {
     await page.keyboard.press('Alt+5');
-    await expect(page.getByText(/UHID/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Patients (UHID)' })).toBeVisible();
     await expect(page.getByText(/Patient Details/i)).toBeVisible();
   });
 
   test('Refer & Earn tab shows affiliate dashboard', async ({ page }) => {
     await page.keyboard.press('Alt+8');
-    await expect(page.getByText(/Refer & Earn/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Refer & Earn', exact: true })).toBeVisible();
   });
 });

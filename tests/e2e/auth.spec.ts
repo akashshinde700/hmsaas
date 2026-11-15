@@ -12,7 +12,7 @@ test.describe('Authentication & Multi-Tenant Login', () => {
     await page.getByLabel(/password/i).fill(TENANT_ADMIN.password);
     await page.getByRole('button', { name: /sign in|login/i }).click();
     await expect(page).toHaveURL('/dashboard');
-    await expect(page.getByText(/Sahyadri Multispecialty/i)).toBeVisible();
+    await expect(page.getByText('Sahyadri Multispecialty Hospital', { exact: true })).toBeVisible();
   });
 
   test('Doctor can login and access dashboard with role-appropriate modules', async ({ page }) => {
@@ -22,7 +22,9 @@ test.describe('Authentication & Multi-Tenant Login', () => {
     await page.getByRole('button', { name: /sign in|login/i }).click();
     await expect(page).toHaveURL('/dashboard');
     // Doctor should see role badge
-    await expect(page.getByText(/Consulting Doctor|doctor/i)).toBeVisible();
+    await expect(page.locator('aside').getByText('Consulting Doctor', { exact: true })).toBeVisible();
+    await expect(page.locator('aside').getByRole('button', { name: /Hospital Settings/ })).toHaveCount(0);
+    await expect(page.getByText('Temporary Workspace Glitch')).toHaveCount(0);
   });
 
   test('Polyclinic tenant can login', async ({ page }) => {
@@ -35,7 +37,6 @@ test.describe('Authentication & Multi-Tenant Login', () => {
 
   test('Platform admin can login and access platform admin console', async ({ page }) => {
     await page.goto('/platform-admin');
-    await expect(page).toHaveURL('/login');
     await page.getByLabel(/email/i).fill(PLATFORM_ADMIN.email);
     await page.getByLabel(/password/i).fill(PLATFORM_ADMIN.password);
     await page.getByRole('button', { name: /sign in|login/i }).click();

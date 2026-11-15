@@ -33,7 +33,7 @@ import {
   History,
 } from 'lucide-react'
 import { PwaInstallButton } from '@/components/pwa/PwaInstall'
-import { useNetworkRecovery, usePersistentState, useRecentItems, useFocusMode, useEnhancedShortcuts } from '@/hooks/useSaaSUX'
+import { useNetworkRecovery, usePersistentState, useRecentItems, useFocusMode } from '@/hooks/useSaaSUX'
 import { useTheme } from '@/components/providers/ThemeProvider'
 import {
   ErrorRecoveryBanner,
@@ -177,9 +177,9 @@ export default function HospitalDashboardPage() {
         router.replace('/login')
         return
       }
-      setSessionInfo(aJson)
-      if (aJson.organization?.settings) {
-        setSettings(aJson.organization.settings)
+      setSessionInfo({ ...aJson.user, organization: aJson.organization })
+      if (aJson.settings) {
+        setSettings(aJson.settings)
       }
 
       const headerMs = dRes.headers.get('X-Response-Time')
@@ -302,17 +302,7 @@ export default function HospitalDashboardPage() {
     }
   }, [user, visibleNavItems, activeNav, setActiveNav])
 
-  // #13 Global Keyboard Shortcuts (⌘K, ?, [, Alt+1..9, Esc, + Focus Mode F)
-  useEnhancedShortcuts([
-    { key: 'k', modifier: 'meta', description: 'Open Command Palette', category: 'Navigation', run: () => { setCmdOpen(true); setCmdActiveIndex(0) }, inInput: false },
-    { key: 'k', modifier: 'ctrl', description: 'Open Command Palette', category: 'Navigation', run: () => { setCmdOpen(true); setCmdActiveIndex(0) }, inInput: false },
-    { key: '?', description: 'Keyboard Shortcuts Help', category: 'Navigation', run: () => setShortcutsOpen((v) => !v), inInput: false },
-    { key: '[', description: 'Collapse / Expand Sidebar', category: 'Navigation', run: () => setSidebarCollapsed((v) => !v), inInput: false },
-    { key: 'f', modifier: 'meta', description: 'Toggle Focus Mode', category: 'UI', run: toggleFocus, inInput: false },
-    { key: 'f', modifier: 'ctrl', description: 'Toggle Focus Mode', category: 'UI', run: toggleFocus, inInput: false },
-    { key: 'r', modifier: 'alt', description: 'Refresh Dashboard Data', category: 'Actions', run: refreshCore, inInput: false },
-  ])
-
+  // Global keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase()
@@ -334,12 +324,23 @@ export default function HospitalDashboardPage() {
 
       if (e.altKey && e.key >= '1' && e.key <= '9') {
         e.preventDefault()
-        const idx = Number(e.key) - 1
-        if (visibleNavItems[idx]) setActiveNav(visibleNavItems[idx].id)
+        const target = visibleNavItems.find((item) => item.shortcut === `Alt+${e.key}`)
+        if (target) setActiveNav(target.id)
         return
       }
 
       if (inInput) return
+
+      if (e.altKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault()
+        refreshCore()
+        return
+      }
+      if (e.altKey && e.key.toLowerCase() === 'p') {
+        const pharmacy = visibleNavItems.find((item) => item.id === 'pharmacy')
+        if (pharmacy) { e.preventDefault(); setActiveNav(pharmacy.id) }
+        return
+      }
 
       if (e.key === '?') {
         e.preventDefault()
@@ -354,7 +355,7 @@ export default function HospitalDashboardPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setActiveNav, setSidebarCollapsed, toggleFocus, visibleNavItems])
+  }, [setActiveNav, setSidebarCollapsed, toggleFocus, visibleNavItems, refreshCore])
 
   // #3 Spotlight Command Palette Unified Items
   const commandResults = useMemo(() => {
@@ -620,7 +621,7 @@ export default function HospitalDashboardPage() {
                 <div className="flex items-center gap-2">
                   <BreadcrumbNav
                     items={[
-                      { label: MODULE_LABELS[activeNav as NavKey] || activeNav },
+                      { label: MODULE_LABELS[activeNav as NavKey] || activeNav, moduleId: activeNav },
                     ]}
                   />
                   <h1 className="text-base font-extrabold text-slate-900 truncate">
@@ -798,7 +799,7 @@ export default function HospitalDashboardPage() {
                       {
                         title: 'IPD Ward Occupancy',
                         value: `${kpis.occupiedBeds ?? 0} / ${kpis.totalBeds ?? 0}`,
-                        sub: `${kpis.availableBeds ?? 0} free beds ({kpis.occupancyRate ?? 0}% full)`,
+                        sub: `${kpis.availableBeds ?? 0} free beds (${kpis.occupancyRate ?? 0}% full)`,
                         icon: BedDouble,
                         color: 'sky',
                         onClick: () => setActiveNav('ipd'),

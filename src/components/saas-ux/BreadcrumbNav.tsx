@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useMemo } from 'react'
-import { ChevronRight, Home, Activity, Stethoscope, BedDouble, Users, Pill, CreditCard, Gift, Settings } from 'lucide-react'
+import { ChevronRight, Home, Activity, Stethoscope, BedDouble, Users, Pill, CreditCard, Gift, Settings, Database } from 'lucide-react'
 import Link from 'next/link'
 
 const ICONS: Record<string, React.ElementType> = {
@@ -11,6 +11,7 @@ const ICONS: Record<string, React.ElementType> = {
   ipd: BedDouble,
   patients: Users,
   medicines: Pill,
+  pharmacy: Database,
   billing: CreditCard,
   referrals: Gift,
   settings: Settings,
@@ -37,7 +38,7 @@ export interface BreadcrumbItem {
 export function BreadcrumbNav({ items }: { items: BreadcrumbItem[] }) {
   const breadcrumbs = useMemo(() => {
     return items.map((item, idx) => {
-      const Icon = ICONS[item.moduleId || '']
+      const Icon = ICONS[item.moduleId || ''] || Home
       const last = idx === items.length - 1
       return (
         <React.Fragment key={item.label}>
