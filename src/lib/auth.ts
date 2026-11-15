@@ -22,6 +22,7 @@ export interface TenantSessionPayload {
   role: string
   name: string
   email: string
+  specialization?: string | null
   impersonatedBy?: string
 }
 
@@ -44,6 +45,7 @@ export function createTenantToken(
     role: string
     name: string
     email: string
+    specialization?: string | null
   },
   org: { name: string; slug: string },
   impersonatedBy?: string,
@@ -59,6 +61,7 @@ export function createTenantToken(
       role: user.role,
       name: user.name,
       email: user.email,
+      ...(user.specialization ? { specialization: user.specialization } : {}),
       ...(impersonatedBy ? { impersonatedBy } : {}),
     },
     ttlSeconds

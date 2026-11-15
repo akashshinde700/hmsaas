@@ -24,7 +24,6 @@ import {
   Stethoscope,
   Zap,
 } from 'lucide-react'
-import { PwaInstallButton } from '@/components/pwa/PwaInstall'
 import { useAutosaveDraft, useThrottledCallback } from '@/hooks/useSaaSUX'
 import { AutosaveBadge, SmartValidatedInput } from '@/components/saas-ux/SaaSUXPrimitives'
 import { toast } from 'sonner'
@@ -187,51 +186,6 @@ export default function SaaSLandingPage({ initialPlans }: { initialPlans: Public
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* Top Navbar */}
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white shadow-sm shadow-teal-600/20">
-              <HeartPulse className="h-5 w-5" />
-            </div>
-            <div>
-              <span className="text-base font-extrabold tracking-tight text-slate-900">
-                AetherMed <span className="text-teal-600">Cloud</span>
-              </span>
-              <p className="text-[11px] font-medium text-slate-500">by AetherDev Solutions</p>
-            </div>
-          </div>
-
-          <nav className="hidden items-center gap-6 text-sm font-medium text-slate-600 md:flex">
-            <a href="#modules" className="hover:text-teal-600 transition">OPD &amp; IPD</a>
-            <a href="#medwiki" className="hover:text-teal-600 transition">MedWiki Engine</a>
-            <a href="#pricing" className="hover:text-teal-600 transition">SaaS Plans</a>
-            <Link href="/referrals" className="text-teal-700 font-semibold hover:text-teal-800 transition">
-              Affiliate (20%)
-            </Link>
-            <Link href="/blog" className="hover:text-teal-600 transition">Insights</Link>
-            <a href="#demo" className="hover:text-teal-600 transition">Book Demo</a>
-          </nav>
-
-          <div className="flex items-center gap-2.5">
-            <PwaInstallButton compact />
-            <Link
-              href="/platform-admin"
-              className="hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 sm:inline-flex transition"
-            >
-              Platform Admin
-            </Link>
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 transition"
-            >
-              Hospital Login
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
-      </header>
-
       {/* Hero Section */}
       <section className="relative overflow-hidden bg-gradient-to-b from-white via-teal-50/40 to-slate-50 pt-14 pb-20 lg:pt-20 lg:pb-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">

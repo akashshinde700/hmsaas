@@ -19,11 +19,13 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Moon,
   Pill,
   Settings,
   ShieldAlert,
   Sparkles,
   Stethoscope,
+  Sun,
   Users,
   X,
   Zap,
@@ -32,6 +34,7 @@ import {
 } from 'lucide-react'
 import { PwaInstallButton } from '@/components/pwa/PwaInstall'
 import { useNetworkRecovery, usePersistentState, useRecentItems, useFocusMode, useEnhancedShortcuts } from '@/hooks/useSaaSUX'
+import { useTheme } from '@/components/providers/ThemeProvider'
 import {
   ErrorRecoveryBanner,
   KeyboardShortcutsModal,
@@ -59,6 +62,7 @@ import {
   HospitalSettingsTab,
   MedicineMasterTab,
 } from '@/components/hms/FormularyBillingSettingsTabs'
+import PharmacyStockTab from '@/components/pharmacy/PharmacyStockTab'
 import OnboardingWizardModal from '@/components/hms/OnboardingWizardModal'
 import ReferAndEarnTab from '@/components/hms/ReferAndEarnTab'
 import type {
@@ -74,6 +78,7 @@ type NavKey =
   | 'ipd'
   | 'patients'
   | 'medicines'
+  | 'pharmacy'
   | 'billing'
   | 'referrals'
   | 'settings'
@@ -93,6 +98,7 @@ const NAV_ITEMS: Array<{
   { id: 'ipd', label: 'IPD & Bed Board', shortLabel: 'IPD', shortcut: 'Alt+4', icon: BedDouble, badge: 'Live' },
   { id: 'patients', label: 'Patients (UHID)', shortLabel: 'Patients', shortcut: 'Alt+5', icon: Users },
   { id: 'medicines', label: 'Medicine Formulary', shortLabel: 'Meds', shortcut: 'Alt+6', icon: Pill },
+  { id: 'pharmacy', label: 'Pharmacy Stock', shortLabel: 'Pharmacy', shortcut: 'Alt+P', icon: Database },
   { id: 'billing', label: 'Lab & Billing', shortLabel: 'Billing', shortcut: 'Alt+7', icon: CreditCard },
   { id: 'referrals', label: 'Refer & Earn', shortLabel: 'Refer', shortcut: 'Alt+8', icon: Gift, badge: '20%' },
   { id: 'settings', label: 'Hospital Settings', shortLabel: 'Settings', shortcut: 'Alt+9', icon: Settings },
@@ -105,6 +111,7 @@ const MODULE_LABELS: Record<NavKey, string> = {
   ipd: 'IPD & Bed Board',
   patients: 'Patient Directory (UHID)',
   medicines: 'Medicine Formulary',
+  pharmacy: 'Pharmacy Stock Management',
   billing: 'Lab & Billing',
   referrals: 'Refer & Earn',
   settings: 'Hospital Settings',
@@ -208,6 +215,7 @@ export default function HospitalDashboardPage() {
     role: string
     name: string
     email: string
+    specialization?: string | null
     impersonatedBy?: string
     organization?: {
       name: string
@@ -235,6 +243,7 @@ export default function HospitalDashboardPage() {
       role: s.role as any,
       name: s.name,
       email: s.email,
+      specialization: s.specialization || null,
     } as UserContext
   }, [sessionInfo])
 
@@ -251,12 +260,17 @@ export default function HospitalDashboardPage() {
   // Accessible modules based on role + plan
   const accessibleModules = useSidebarModules(user, planFeaturesJson, orgType)
 
-  // Filter NAV_ITEMS by access control
+  // Filter NAV_ITEMS by access control + org-level module toggles
   const visibleNavItems = useMemo(() => {
     if (!user) return []
     const accessibleIds = new Set(accessibleModules.map((m) => m.id))
-    return NAV_ITEMS.filter((n) => accessibleIds.has(n.id))
-  }, [user, accessibleModules])
+    return NAV_ITEMS.filter((n) => {
+      if (!accessibleIds.has(n.id)) return false
+      // Pharmacy module is gated on org-level pharmacyEnabled toggle
+      if (n.id === 'pharmacy' && !(settings?.pharmacyEnabled || false)) return false
+      return true
+    })
+  }, [user, accessibleModules, settings])
 
   // Auto-reset activeNav if current tab is no longer accessible
   useEffect(() => {
@@ -392,6 +406,8 @@ export default function HospitalDashboardPage() {
   }
 
   const roleInfo = user ? (ROLE_INFO as Record<string, { label: string; color: string; description: string }>)[user.role] : null
+
+  const { resolvedTheme, toggleTheme, theme } = useTheme()
 
   const typedSession = sessionInfo as unknown as TenantSession | null
 
@@ -645,6 +661,22 @@ export default function HospitalDashboardPage() {
               >
                 <Keyboard className="h-3.5 w-3.5" />
                 <kbd className="font-mono text-[10px]">?</kbd>
+              </button>
+
+              {/* Dark Mode Toggle */}
+              <button
+                type="button"
+                onClick={toggleTheme}
+                title={`Switch to ${theme === 'dark' ? 'light' : theme === 'light' ? 'dark' : 'system'} mode`}
+                className={`rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition ${
+                  resolvedTheme === 'dark' ? 'text-teal-600 border-teal-200 bg-teal-50' : ''
+                }`}
+              >
+                {resolvedTheme === 'dark' ? (
+                  <Sun className="h-3.5 w-3.5 text-amber-600" />
+                ) : (
+                  <Moon className="h-3.5 w-3.5 text-slate-600" />
+                )}
               </button>
 
               <PwaInstallButton compact />
@@ -1092,6 +1124,24 @@ export default function HospitalDashboardPage() {
                     organizationType={orgType}
                   >
                     <MedicineMasterTab />
+                  </ModuleAccessGate>
+                )}
+
+                {/* ==================== PHARMACY STOCK TAB ==================== */}
+                {activeNav === 'pharmacy' && (
+                  <ModuleAccessGate
+                    moduleId="pharmacy"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    {user && (
+                      <PharmacyStockTab
+                        organizationId={user.organizationId}
+                        userRole={user.role}
+                        userName={user.name}
+                      />
+                    )}
                   </ModuleAccessGate>
                 )}
 

@@ -116,7 +116,6 @@ export async function POST(req: NextRequest) {
       email: body.email ? String(body.email).trim() : null,
       address: body.address ? String(body.address).trim() : null,
       city: body.city ? String(body.city).trim() : 'Pune',
-      abhaNumber: body.abhaNumber ? String(body.abhaNumber).trim() : null,
       allergies: body.allergies ? String(body.allergies).trim() : null,
       chronicConditions: body.chronicConditions ? String(body.chronicConditions).trim() : null,
       emergencyContact: body.emergencyContact ? String(body.emergencyContact).trim() : null,

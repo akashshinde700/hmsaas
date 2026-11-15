@@ -12,6 +12,16 @@ export interface ClinicSettingsData {
   bankAccountNo?: string | null
   bankIfsc?: string | null
   rxFooterNote?: string | null
+  // Patient Portal access control
+  patientPortalEnabled?: boolean
+  portalWelcomeMessage?: string | null
+  // Pharmacy module toggle
+  pharmacyEnabled?: boolean
+  // WhatsApp integration
+  whatsappEnabled?: boolean
+  whatsappGatewayUrl?: string | null
+  whatsappApiKey?: string | null
+  whatsappPhoneNumber?: string | null
 }
 
 export interface DoctorOption {
@@ -35,7 +45,6 @@ export interface PatientRecord {
   email?: string | null
   address?: string | null
   city?: string | null
-  abhaNumber?: string | null
   allergies?: string | null
   chronicConditions?: string | null
   emergencyContact?: string | null

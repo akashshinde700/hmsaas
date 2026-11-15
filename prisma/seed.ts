@@ -397,7 +397,6 @@ async function main() {
         phone: '9850112233',
         city: 'Pune',
         address: 'Aundh Road, Pune',
-        abhaNumber: '91-4421-8830-1920',
         allergies: 'Sulfa Drugs, Penicillin',
         chronicConditions: 'Type 2 Diabetes, Hypertension',
         emergencyContact: 'Sunita Patil (Wife)',

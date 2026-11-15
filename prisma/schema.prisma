@@ -86,6 +86,8 @@ model Organization {
   customMedicines       Medicine[]
   doctorMedicineDefaults DoctorMedicineDefault[]
   auditLogs             AuditLog[]
+  pharmacyStocks        PharmacyStock[]
+  pharmacyDispenses     PharmacyDispense[]
 
   @@index([status])
 }
@@ -198,6 +200,7 @@ model Medicine {
   defaultRoute         String        @default("Oral")
   defaultTiming        String        @default("After Food")
   defaultInstructions  String?
+  language             String       @default("en") // en, hi, mr
   uses                 String?
   sideEffects          String?
   contraindications    String?
@@ -213,6 +216,7 @@ model Medicine {
 
   prescriptionItems   PrescriptionItem[]
   ipdMedicationOrders IpdMedicationOrder[]
+  pharmacyStocks      PharmacyStock[]
 
   @@index([organizationId, isActive])
   @@index([isActive, usageCount])
@@ -266,6 +270,7 @@ model Branch {
   beds          Bed[]
   ipdAdmissions IpdAdmission[]
   invoices      Invoice[]
+  pharmacyStocks PharmacyStock[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -290,6 +295,8 @@ model User {
   consultationFee      Float        @default(500)
   takesConsultations   Boolean      @default(true)
   isActive             Boolean      @default(true)
+  // Doctor-level: can this doctor's patients access the patient portal?
+  portalAccessEnabled  Boolean      @default(false)
   lastLogin            DateTime?
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
@@ -329,6 +336,16 @@ model ClinicSettings {
   onboardingCompleted Boolean      @default(false)
   onboardingDataJson  String       @default("{}")
   referralCode        String?
+  // Patient Portal access control — org level
+  patientPortalEnabled Boolean    @default(false) // Org admin enables portal for their patients
+  portalWelcomeMessage String?    // Custom message shown to patients on portal login
+  // Pharmacy module toggle — org level (hide pharmacy for hospitals without pharmacy)
+  pharmacyEnabled      Boolean    @default(false) // Org admin enables pharmacy inventory module
+  // WhatsApp integration — org level
+  whatsappEnabled      Boolean    @default(false) // Enable WhatsApp notifications
+  whatsappGatewayUrl   String?    // Self-hosted OpenWA / Evolution API URL
+  whatsappApiKey       String?    // Gateway API key
+  whatsappPhoneNumber  String?    // Hospital's registered WhatsApp number
   updatedAt           DateTime     @updatedAt
 }
 
@@ -368,7 +385,6 @@ model Patient {
   address           String?
   city              String?
   pincode           String?
-  abhaNumber        String?      // Ayushman Bharat Health Account
   aadhaarLast4      String?
   allergies         String?      // Comma-separated drug/food allergies (highlighted in Rx & IPD!)
   chronicConditions String?      // Diabetes, Hypertension, Asthma, Thyroid...
@@ -390,6 +406,7 @@ model Patient {
   patientDeposits PatientDeposit[]
   invoices        Invoice[]
   payments        Payment[]
+  pharmacyDispenses PharmacyDispense[]
 
   @@unique([organizationId, uhid])
   @@index([organizationId, phone])
@@ -487,6 +504,7 @@ model Prescription {
   updatedAt           DateTime     @updatedAt
 
   items PrescriptionItem[]
+  pharmacyDispenses PharmacyDispense[]
 
   @@unique([organizationId, prescriptionNo])
   @@index([organizationId, patientId, createdAt])
@@ -868,4 +886,59 @@ model ReferralLead {
   updatedAt          DateTime         @updatedAt
 
   @@index([partnerId, status])
+}
+
+// ============================================================================
+// 9. PHARMACY / MEDICINE INVENTORY MANAGEMENT
+// ============================================================================
+// Stock per batch with expiry tracking, low-stock alerts, and dispensing log.
+
+model PharmacyStock {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId        String?
+  branch          Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  medicineId      String
+  medicine        Medicine @relation(fields: [medicineId], references: [id])
+  batchNo         String   // e.g. BATCH-2026-001
+  mrp             Float
+  purchasePrice   Float
+  sellingPrice    Float
+  quantity        Int      @default(0) // current stock
+  reorderLevel    Int      @default(10) // alert when stock <= this
+  expiryDate      DateTime?
+  manufacturer    String?
+  receivedAt      DateTime @default(now())
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  pharmacyDispenses PharmacyDispense[]
+
+  @@index([organizationId, medicineId])
+  @@index([medicineId, expiryDate])
+  @@index([organizationId, quantity])
+}
+
+model PharmacyDispense {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id])
+  prescriptionId  String?
+  prescription    Prescription? @relation(fields: [prescriptionId], references: [id], onDelete: SetNull)
+  pharmacyStockId String
+  pharmacyStock   PharmacyStock @relation(fields: [pharmacyStockId], references: [id])
+  quantity        Int
+  unitPrice       Float
+  totalAmount     Float
+  dispensedBy     String
+  dispensedAt     DateTime @default(now())
+  notes           String?
+
+  @@index([organizationId, patientId])
+  @@index([pharmacyStockId])
+  @@index([dispensedAt])
 }

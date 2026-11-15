@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
   const orgId = session.organizationId
   const { searchParams } = new URL(req.url)
   const show = searchParams.get('show') || 'all' // current, discharged, all
+  const speciality = searchParams.get('speciality') || undefined
 
   const [categories, beds, admissions] = await Promise.all([
     db.bedCategory.findMany({
@@ -30,6 +31,9 @@ export async function GET(req: NextRequest) {
           ? { dischargedAt: null }
           : show === 'discharged'
           ? { NOT: { dischargedAt: null } }
+          : {}),
+        ...(speciality
+          ? { admittingDoctor: { specialization: { contains: speciality } } }
           : {}),
       },
       include: {

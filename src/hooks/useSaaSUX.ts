@@ -185,6 +185,7 @@ export type HmsModuleId =
   | 'ipd'
   | 'patients'
   | 'medicines'
+  | 'pharmacy'
   | 'billing'
   | 'referrals'
   | 'settings'

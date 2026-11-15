@@ -84,19 +84,25 @@ export async function POST(req: NextRequest) {
   const token = createTenantToken(user, {
     name: user.organization.name,
     slug: user.organization.slug,
-  })
+  }, undefined, 60 * 60 * 24 * 7)
+
+  // Attach specialization for doctor specialty-based module gating
+  const userPayload: Record<string, unknown> = {
+    userId: user.id,
+    organizationId: user.organizationId,
+    organizationName: user.organization.name,
+    organizationSlug: user.organization.slug,
+    role: user.role,
+    name: user.name,
+    email: user.email,
+  }
+  if (user.role === 'doctor' && user.specialization) {
+    userPayload['specialization'] = user.specialization
+  }
 
   const res = apiJson(
     {
-      user: {
-        userId: user.id,
-        organizationId: user.organizationId,
-        organizationName: user.organization.name,
-        organizationSlug: user.organization.slug,
-        role: user.role,
-        name: user.name,
-        email: user.email,
-      },
+      user: userPayload,
     },
     { startMs }
   )

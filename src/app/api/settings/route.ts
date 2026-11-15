@@ -76,6 +76,9 @@ export async function POST(req: NextRequest) {
         consultationFee: Number(body.consultationFee || 500),
         takesConsultations:
           String(body.role || '').toLowerCase() === 'doctor' || Boolean(body.takesConsultations),
+        ...(body.role === 'doctor'
+          ? { portalAccessEnabled: Boolean(body.portalAccessEnabled) }
+          : {}),
       },
     })
     invalidateCachePrefix(`dash:${orgId}`)
@@ -150,10 +153,52 @@ export async function POST(req: NextRequest) {
       bankAccountNo: body.bankAccountNo ? String(body.bankAccountNo) : null,
       bankIfsc: body.bankIfsc ? String(body.bankIfsc) : null,
       rxFooterNote: body.rxFooterNote ? String(body.rxFooterNote) : undefined,
+      ...(typeof body.patientPortalEnabled === 'boolean'
+        ? { patientPortalEnabled: body.patientPortalEnabled }
+        : {}),
+      ...(body.portalWelcomeMessage
+        ? { portalWelcomeMessage: String(body.portalWelcomeMessage) }
+        : {}),
+      ...(typeof body.pharmacyEnabled === 'boolean'
+        ? { pharmacyEnabled: body.pharmacyEnabled }
+        : {}),
+      ...(typeof body.whatsappEnabled === 'boolean'
+        ? { whatsappEnabled: body.whatsappEnabled }
+        : {}),
+      ...(body.whatsappGatewayUrl
+        ? { whatsappGatewayUrl: String(body.whatsappGatewayUrl) }
+        : {}),
+      ...(body.whatsappApiKey
+        ? { whatsappApiKey: String(body.whatsappApiKey) }
+        : {}),
+      ...(body.whatsappPhoneNumber
+        ? { whatsappPhoneNumber: String(body.whatsappPhoneNumber) }
+        : {}),
     },
     create: {
       organizationId: orgId,
       clinicDisplayName: String(body.clinicDisplayName || 'Hospital').trim(),
+      ...(typeof body.patientPortalEnabled === 'boolean'
+        ? { patientPortalEnabled: body.patientPortalEnabled }
+        : {}),
+      ...(body.portalWelcomeMessage
+        ? { portalWelcomeMessage: String(body.portalWelcomeMessage) }
+        : {}),
+      ...(typeof body.pharmacyEnabled === 'boolean'
+        ? { pharmacyEnabled: body.pharmacyEnabled }
+        : {}),
+      ...(typeof body.whatsappEnabled === 'boolean'
+        ? { whatsappEnabled: body.whatsappEnabled }
+        : {}),
+      ...(body.whatsappGatewayUrl
+        ? { whatsappGatewayUrl: String(body.whatsappGatewayUrl) }
+        : {}),
+      ...(body.whatsappApiKey
+        ? { whatsappApiKey: String(body.whatsappApiKey) }
+        : {}),
+      ...(body.whatsappPhoneNumber
+        ? { whatsappPhoneNumber: String(body.whatsappPhoneNumber) }
+        : {}),
     },
   })
 

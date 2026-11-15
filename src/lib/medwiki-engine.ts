@@ -189,6 +189,7 @@ export interface RawMedicineInput {
   defaultRoute?: string | null
   defaultTiming?: string | null
   defaultInstructions?: string | null
+  language?: string | null
   uses?: string | null
   sideEffects?: string | null
   contraindications?: string | null
@@ -286,6 +287,7 @@ export function normalizeMedicineRecord(input: RawMedicineInput) {
     defaultRoute: route,
     defaultTiming,
     defaultInstructions: (input.defaultInstructions || '').trim() || null,
+    language: input.language || 'en',
     uses: (input.uses || '').trim() || null,
     sideEffects: (input.sideEffects || '').trim() || null,
     contraindications: (input.contraindications || '').trim() || null,
