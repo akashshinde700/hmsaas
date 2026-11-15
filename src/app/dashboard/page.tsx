@@ -215,6 +215,7 @@ export default function HospitalDashboardPage() {
     role: string
     name: string
     email: string
+    specialization?: string | null
     impersonatedBy?: string
     organization?: {
       name: string
@@ -242,6 +243,7 @@ export default function HospitalDashboardPage() {
       role: s.role as any,
       name: s.name,
       email: s.email,
+      specialization: s.specialization || null,
     } as UserContext
   }, [sessionInfo])
 

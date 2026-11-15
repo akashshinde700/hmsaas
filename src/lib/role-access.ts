@@ -66,6 +66,7 @@ export interface UserContext {
   name: string
   email: string
   isDoctor?: boolean
+  specialization?: string | null
 }
 
 export interface PlanFeatures {
@@ -176,6 +177,130 @@ export const MODULE_REGISTRY: Record<HmsModuleId, ModuleDefinition> = {
     iconName: 'Settings',
     defaultRoles: ['super_admin', 'admin'],
     hiddenForSingleDoctor: true,
+  },
+}
+
+// -----------------------------------------------------------------------------
+// Speciality-wise module visibility
+// Based on doctor's specialization, show/hide dashboard modules.
+// Inspired by: dental-erp (dental), physio-therapy (physio), pathology-lis (lab),
+// fertility-clinic (IVF), drxstore (pharmacy)
+// -----------------------------------------------------------------------------
+export type DoctorSpeciality =
+  | 'General Medicine'
+  | 'Dental'
+  | 'Physiotherapy'
+  | 'Pathology'
+  | 'Laboratory'
+  | 'Fertility'
+  | 'IVF'
+  | 'Gynecology'
+  | 'Obstetrics'
+  | 'Cardiology'
+  | 'Pediatrics'
+  | 'Orthopedics'
+  | 'Dermatology'
+  | 'Ophthalmology'
+  | 'ENT'
+  | 'Neurology'
+  | 'Psychiatry'
+  | 'General Surgery'
+  | 'Multispecialty'
+  | string
+
+export interface SpecialityModuleConfig {
+  /** Modules to ALWAYS show for this speciality (in addition to role-based) */
+  alwaysShow: HmsModuleId[]
+  /** Modules to HIDE for this speciality */
+  hide: HmsModuleId[]
+  /** Custom label overrides */
+  labels?: Partial<Record<HmsModuleId, string>>
+}
+
+export const SPECIALITY_MODULES: Record<DoctorSpeciality, SpecialityModuleConfig> = {
+  'General Medicine': {
+    alwaysShow: ['opd', 'rx', 'patients', 'medicines', 'billing'],
+    hide: [],
+  },
+  Dental: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: ['ipd'], // Dental clinics typically don't have IPD wards
+    labels: { rx: 'Dental Rx', opd: 'Dental OPD' },
+  },
+  Physiotherapy: {
+    alwaysShow: ['opd', 'patients', 'billing'],
+    hide: ['ipd', 'rx', 'medicines'],
+    labels: { opd: 'Physio Sessions', billing: 'Session Packages' },
+  },
+  Pathology: {
+    alwaysShow: ['patients', 'billing'],
+    hide: ['opd', 'rx', 'ipd', 'medicines'],
+    labels: { billing: 'Test Billing' },
+  },
+  Laboratory: {
+    alwaysShow: ['patients', 'billing'],
+    hide: ['opd', 'rx', 'ipd', 'medicines'],
+    labels: { billing: 'Test Billing' },
+  },
+  Fertility: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: ['ipd'],
+    labels: { opd: 'Fertility Consult', rx: 'IVF Protocols' },
+  },
+  IVF: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: ['ipd'],
+    labels: { opd: 'IVF Consult', rx: 'IVF Protocols' },
+  },
+  Gynecology: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+    labels: { rx: 'Obs/Gyn Rx' },
+  },
+  Obstetrics: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+    labels: { rx: 'Obstetrics Rx' },
+  },
+  Cardiology: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+  },
+  Pediatrics: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+  },
+  Orthopedics: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+  },
+  Dermatology: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+  },
+  Ophthalmology: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+  },
+  ENT: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+  },
+  Neurology: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+  },
+  Psychiatry: {
+    alwaysShow: ['opd', 'rx', 'patients', 'billing'],
+    hide: [],
+  },
+  'General Surgery': {
+    alwaysShow: ['opd', 'ipd', 'rx', 'patients', 'billing'],
+    hide: [],
+  },
+  Multispecialty: {
+    alwaysShow: ['opd', 'ipd', 'rx', 'patients', 'medicines', 'billing', 'pharmacy'],
+    hide: [],
   },
 }
 
@@ -300,15 +425,32 @@ export function canAccessModule(
 
 // -----------------------------------------------------------------------------
 // Get all accessible modules for a user, sorted by NAV order
+// Filters by role, plan, clinic model, AND doctor's speciality.
 // -----------------------------------------------------------------------------
 export function getAccessibleModules(
   ctx: UserContext,
   planFeatures: PlanFeatures,
   clinicModel: ClinicModelConfig,
 ): ModuleDefinition[] {
-  return Object.values(MODULE_REGISTRY).filter((mod) =>
+  const allModules = Object.values(MODULE_REGISTRY).filter((mod) =>
     canAccessModule(mod.id, ctx, planFeatures, clinicModel),
   )
+
+  // Speciality-wise filtering for doctors
+  if (ctx.role === 'doctor' && ctx.specialization) {
+    const specKey = ctx.specialization as DoctorSpeciality
+    const specConfig = SPECIALITY_MODULES[specKey]
+
+    if (specConfig) {
+      return allModules.filter((mod) => {
+        // Hide modules explicitly excluded for this speciality
+        if (specConfig.hide.includes(mod.id)) return false
+        return true
+      })
+    }
+  }
+
+  return allModules
 }
 
 // -----------------------------------------------------------------------------
