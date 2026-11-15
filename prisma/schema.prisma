@@ -86,6 +86,8 @@ model Organization {
   customMedicines       Medicine[]
   doctorMedicineDefaults DoctorMedicineDefault[]
   auditLogs             AuditLog[]
+  pharmacyStocks        PharmacyStock[]
+  pharmacyDispenses     PharmacyDispense[]
 
   @@index([status])
 }
@@ -213,6 +215,7 @@ model Medicine {
 
   prescriptionItems   PrescriptionItem[]
   ipdMedicationOrders IpdMedicationOrder[]
+  pharmacyStocks      PharmacyStock[]
 
   @@index([organizationId, isActive])
   @@index([isActive, usageCount])
@@ -266,6 +269,7 @@ model Branch {
   beds          Bed[]
   ipdAdmissions IpdAdmission[]
   invoices      Invoice[]
+  pharmacyStocks PharmacyStock[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -394,6 +398,7 @@ model Patient {
   patientDeposits PatientDeposit[]
   invoices        Invoice[]
   payments        Payment[]
+  pharmacyDispenses PharmacyDispense[]
 
   @@unique([organizationId, uhid])
   @@index([organizationId, phone])
@@ -491,6 +496,7 @@ model Prescription {
   updatedAt           DateTime     @updatedAt
 
   items PrescriptionItem[]
+  pharmacyDispenses PharmacyDispense[]
 
   @@unique([organizationId, prescriptionNo])
   @@index([organizationId, patientId, createdAt])
@@ -872,4 +878,59 @@ model ReferralLead {
   updatedAt          DateTime         @updatedAt
 
   @@index([partnerId, status])
+}
+
+// ============================================================================
+// 9. PHARMACY / MEDICINE INVENTORY MANAGEMENT
+// ============================================================================
+// Stock per batch with expiry tracking, low-stock alerts, and dispensing log.
+
+model PharmacyStock {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId        String?
+  branch          Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  medicineId      String
+  medicine        Medicine @relation(fields: [medicineId], references: [id])
+  batchNo         String   // e.g. BATCH-2026-001
+  mrp             Float
+  purchasePrice   Float
+  sellingPrice    Float
+  quantity        Int      @default(0) // current stock
+  reorderLevel    Int      @default(10) // alert when stock <= this
+  expiryDate      DateTime?
+  manufacturer    String?
+  receivedAt      DateTime @default(now())
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  pharmacyDispenses PharmacyDispense[]
+
+  @@index([organizationId, medicineId])
+  @@index([medicineId, expiryDate])
+  @@index([organizationId, quantity])
+}
+
+model PharmacyDispense {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patientId       String
+  patient         Patient @relation(fields: [patientId], references: [id])
+  prescriptionId  String?
+  prescription    Prescription? @relation(fields: [prescriptionId], references: [id], onDelete: SetNull)
+  pharmacyStockId String
+  pharmacyStock   PharmacyStock @relation(fields: [pharmacyStockId], references: [id])
+  quantity        Int
+  unitPrice       Float
+  totalAmount     Float
+  dispensedBy     String
+  dispensedAt     DateTime @default(now())
+  notes           String?
+
+  @@index([organizationId, patientId])
+  @@index([pharmacyStockId])
+  @@index([dispensedAt])
 }

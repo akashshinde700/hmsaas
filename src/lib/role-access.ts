@@ -29,6 +29,7 @@ export type HmsModuleId =
   | 'ipd'
   | 'patients'
   | 'medicines'
+  | 'pharmacy'
   | 'billing'
   | 'referrals'
   | 'settings'
@@ -137,6 +138,15 @@ export const MODULE_REGISTRY: Record<HmsModuleId, ModuleDefinition> = {
     shortLabel: 'Meds',
     shortcut: 'Alt+6',
     iconName: 'Pill',
+    planFeature: 'pharmacy',
+    defaultRoles: ['super_admin', 'admin', 'doctor', 'nurse', 'pharmacist'],
+  },
+  pharmacy: {
+    id: 'pharmacy',
+    label: 'Pharmacy Stock',
+    shortLabel: 'Pharmacy',
+    shortcut: 'Alt+P',
+    iconName: 'Database',
     planFeature: 'pharmacy',
     defaultRoles: ['super_admin', 'admin', 'doctor', 'nurse', 'pharmacist'],
   },

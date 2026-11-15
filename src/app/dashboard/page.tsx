@@ -62,6 +62,7 @@ import {
   HospitalSettingsTab,
   MedicineMasterTab,
 } from '@/components/hms/FormularyBillingSettingsTabs'
+import PharmacyStockTab from '@/components/pharmacy/PharmacyStockTab'
 import OnboardingWizardModal from '@/components/hms/OnboardingWizardModal'
 import ReferAndEarnTab from '@/components/hms/ReferAndEarnTab'
 import type {
@@ -77,6 +78,7 @@ type NavKey =
   | 'ipd'
   | 'patients'
   | 'medicines'
+  | 'pharmacy'
   | 'billing'
   | 'referrals'
   | 'settings'
@@ -96,6 +98,7 @@ const NAV_ITEMS: Array<{
   { id: 'ipd', label: 'IPD & Bed Board', shortLabel: 'IPD', shortcut: 'Alt+4', icon: BedDouble, badge: 'Live' },
   { id: 'patients', label: 'Patients (UHID)', shortLabel: 'Patients', shortcut: 'Alt+5', icon: Users },
   { id: 'medicines', label: 'Medicine Formulary', shortLabel: 'Meds', shortcut: 'Alt+6', icon: Pill },
+  { id: 'pharmacy', label: 'Pharmacy Stock', shortLabel: 'Pharmacy', shortcut: 'Alt+P', icon: Database },
   { id: 'billing', label: 'Lab & Billing', shortLabel: 'Billing', shortcut: 'Alt+7', icon: CreditCard },
   { id: 'referrals', label: 'Refer & Earn', shortLabel: 'Refer', shortcut: 'Alt+8', icon: Gift, badge: '20%' },
   { id: 'settings', label: 'Hospital Settings', shortLabel: 'Settings', shortcut: 'Alt+9', icon: Settings },
@@ -108,6 +111,7 @@ const MODULE_LABELS: Record<NavKey, string> = {
   ipd: 'IPD & Bed Board',
   patients: 'Patient Directory (UHID)',
   medicines: 'Medicine Formulary',
+  pharmacy: 'Pharmacy Stock Management',
   billing: 'Lab & Billing',
   referrals: 'Refer & Earn',
   settings: 'Hospital Settings',
@@ -1113,6 +1117,24 @@ export default function HospitalDashboardPage() {
                     organizationType={orgType}
                   >
                     <MedicineMasterTab />
+                  </ModuleAccessGate>
+                )}
+
+                {/* ==================== PHARMACY STOCK TAB ==================== */}
+                {activeNav === 'pharmacy' && (
+                  <ModuleAccessGate
+                    moduleId="pharmacy"
+                    user={user}
+                    featuresJson={planFeaturesJson}
+                    organizationType={orgType}
+                  >
+                    {user && (
+                      <PharmacyStockTab
+                        organizationId={user.organizationId}
+                        userRole={user.role}
+                        userName={user.name}
+                      />
+                    )}
                   </ModuleAccessGate>
                 )}
 
