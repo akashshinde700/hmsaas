@@ -35,7 +35,6 @@ export interface PatientRecord {
   email?: string | null
   address?: string | null
   city?: string | null
-  abhaNumber?: string | null
   allergies?: string | null
   chronicConditions?: string | null
   emergencyContact?: string | null

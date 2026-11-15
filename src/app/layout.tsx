@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { Toaster } from 'sonner'
 import { PwaServiceWorkerRegister } from '@/components/pwa/PwaInstall'
+import { ThemeProvider } from '@/components/providers/ThemeProvider'
 
 export const metadata: Metadata = {
   title: 'AetherMed Cloud HMS — OPD, IPD & Smart Drug SaaS Platform',
@@ -27,11 +28,13 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="scroll-smooth">
       <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
-        <PwaServiceWorkerRegister />
-        {children}
-        <Toaster richColors position="top-right" closeButton />
+        <ThemeProvider>
+          <PwaServiceWorkerRegister />
+          {children}
+          <Toaster richColors position="top-right" closeButton />
+        </ThemeProvider>
       </body>
     </html>
   )

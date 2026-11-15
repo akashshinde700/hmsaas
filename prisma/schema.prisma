@@ -368,7 +368,6 @@ model Patient {
   address           String?
   city              String?
   pincode           String?
-  abhaNumber        String?      // Ayushman Bharat Health Account
   aadhaarLast4      String?
   allergies         String?      // Comma-separated drug/food allergies (highlighted in Rx & IPD!)
   chronicConditions String?      // Diabetes, Hypertension, Asthma, Thyroid...

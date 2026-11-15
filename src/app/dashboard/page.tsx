@@ -19,11 +19,13 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Moon,
   Pill,
   Settings,
   ShieldAlert,
   Sparkles,
   Stethoscope,
+  Sun,
   Users,
   X,
   Zap,
@@ -32,6 +34,7 @@ import {
 } from 'lucide-react'
 import { PwaInstallButton } from '@/components/pwa/PwaInstall'
 import { useNetworkRecovery, usePersistentState, useRecentItems, useFocusMode, useEnhancedShortcuts } from '@/hooks/useSaaSUX'
+import { useTheme } from '@/components/providers/ThemeProvider'
 import {
   ErrorRecoveryBanner,
   KeyboardShortcutsModal,
@@ -393,6 +396,8 @@ export default function HospitalDashboardPage() {
 
   const roleInfo = user ? (ROLE_INFO as Record<string, { label: string; color: string; description: string }>)[user.role] : null
 
+  const { resolvedTheme, toggleTheme, theme } = useTheme()
+
   const typedSession = sessionInfo as unknown as TenantSession | null
 
   if (initialLoading && !sessionInfo) {
@@ -645,6 +650,22 @@ export default function HospitalDashboardPage() {
               >
                 <Keyboard className="h-3.5 w-3.5" />
                 <kbd className="font-mono text-[10px]">?</kbd>
+              </button>
+
+              {/* Dark Mode Toggle */}
+              <button
+                type="button"
+                onClick={toggleTheme}
+                title={`Switch to ${theme === 'dark' ? 'light' : theme === 'light' ? 'dark' : 'system'} mode`}
+                className={`rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition ${
+                  resolvedTheme === 'dark' ? 'text-teal-600 border-teal-200 bg-teal-50' : ''
+                }`}
+              >
+                {resolvedTheme === 'dark' ? (
+                  <Sun className="h-3.5 w-3.5 text-amber-600" />
+                ) : (
+                  <Moon className="h-3.5 w-3.5 text-slate-600" />
+                )}
               </button>
 
               <PwaInstallButton compact />
