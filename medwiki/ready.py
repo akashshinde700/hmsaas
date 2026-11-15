@@ -41,14 +41,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── DB Config ──────────────────────────────────────────────────────────────────
+# ── DB Config (Environment-driven — never hardcode server passwords) ──────────
 DB_CONFIG = {
-    'host':     'localhost',
-    'user':     'root',
-    'password': 'root',
-    'database': 'medicines',
+    'host':     os.environ.get('MEDWIKI_DB_HOST', '127.0.0.1'),
+    'port':     int(os.environ.get('MEDWIKI_DB_PORT', '3306')),
+    'user':     os.environ.get('MEDWIKI_DB_USER', 'hms_user'),
+    'password': os.environ.get('MEDWIKI_DB_PASSWORD', ''),
+    'database': os.environ.get('MEDWIKI_DB_NAME', 'aethermed_hms'),
     'charset':  'utf8mb4',
 }
+
+# Optional: Push every scraped batch directly to AetherMed Next.js SaaS API
+HMS_SYNC_API_URL = os.environ.get('HMS_SYNC_API_URL', 'http://127.0.0.1:3000/api/medicines/sync')
+HMS_SYNC_API_KEY = os.environ.get('MEDWIKI_SYNC_API_KEY', '')
 
 CHECKPOINT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scraper_checkpoint.json')
 

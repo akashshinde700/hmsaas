@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Offline — AetherMed Cloud HMS</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #0f172a; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 24px; }
+    .card { max-width: 420px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; text-align: center; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06); }
+    .badge { display: inline-flex; width: 48px; height: 48px; border-radius: 12px; background: #0d9488; color: #fff; align-items: center; justify-content: center; font-weight: 800; font-size: 24px; margin-bottom: 16px; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    p { font-size: 14px; color: #64748b; line-height: 1.5; margin: 0 0 20px; }
+    button { background: #0d9488; color: #fff; border: none; border-radius: 10px; padding: 10px 20px; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">+</div>
+    <h1>Network Connection Offline</h1>
+    <p>AetherMed Cloud HMS protects live patient records by never serving stale cached clinical data offline. Reconnect to Wi-Fi or 5G to resume.</p>
+    <button onclick="window.location.reload()">Retry Connection</button>
+  </div>
+</body>
+</html>
